@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+// src/SupplyChain.sol
+
 contract SupplyChain {
     enum Role { None, Producer, Factory, Retailer, Consumer }
     enum UserStatus { None, Pending, Approved, Rejected,Canceled }
@@ -52,26 +54,6 @@ contract SupplyChain {
     event TokenConsumed(uint256 indexed tokenId, address indexed consumer, uint256 amount);// New event for future use
     event UserCanceled(uint256 indexed userId, address indexed wallet);// New event for future use
 
-    function requestUserRole(Role requestedRole) external {
-        require(requestedRole != Role.None, "Invalid role");
-        require(addressToUserId[msg.sender] == 0, "User already registered");
-
-        _userCount++;
-        uint256 userId = _userCount;
-
-        users[userId] = User({
-            id: userId,
-            wallet: msg.sender,
-            role: requestedRole,
-            status: UserStatus.Pending
-        });
-
-        addressToUserId[msg.sender] = userId;
-
-        emit UserRequested(userId, msg.sender, requestedRole);
-    }
-
-
     modifier onlyAdmin() {
         require(msg.sender == admin, "Not admin");
         _;
@@ -92,6 +74,20 @@ contract SupplyChain {
 
     constructor() { admin = msg.sender; }
 
+    function requestUserRole(Role requested) external {
+        require(requested != Role.None, "Invalid role");
+        uint256 current = addressToUserId[msg.sender];
+        if (current == 0) {
+            _userCount++;
+            users[_userCount] = User({ id: _userCount, wallet: msg.sender, role: Role.None, status: UserStatus.Pending });
+            addressToUserId[msg.sender] = _userCount;
+            emit UserRequested(_userCount, msg.sender, requested);
+        } else {
+            require(users[current].status != UserStatus.Approved, "Already approved");
+            users[current].status = UserStatus.Pending;
+            emit UserRequested(current, msg.sender, requested);
+        }
+    }
 
     function approveUser(uint256 userId, Role role) external onlyAdmin {
         require(userId != 0 && userId <= _userCount, "Invalid user");
@@ -121,7 +117,6 @@ contract SupplyChain {
         users[userId].role = Role.None;
         emit UserCanceled(userId, users[userId].wallet);
     }
-
 
     function _requireRole(address who, Role r) internal view {
         uint256 uid = addressToUserId[who];
@@ -172,7 +167,6 @@ contract SupplyChain {
         require(fromRole != Role.Consumer, "Consumer cannot send");
         require(users[uidTo].role == _nextRoleFor(fromRole), "Invalid next role");
 
-
         _transferCount++;
         transferId = _transferCount;
 
@@ -219,7 +213,6 @@ contract SupplyChain {
         emit TransferCreated(transferId, tokenId, msg.sender, to, amount);
     }
 
-
     function acceptTransfer(uint256 transferId) external onlyApproved {
         Transfer storage tr = transfers[transferId];
         require(tr.id != 0, "Transfer missing");
@@ -254,7 +247,6 @@ contract SupplyChain {
 
         emit TokenConsumed(tokenId, msg.sender, amount);
     }
-
 
     function getUserByAddress(address who) external view returns (User memory) {
         uint256 uid = addressToUserId[who];

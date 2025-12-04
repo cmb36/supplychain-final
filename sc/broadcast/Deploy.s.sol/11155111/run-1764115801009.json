@@ -3,8 +3,8 @@
     {
       "hash": "0x12ae9a42386cd3b3f2625f61a6f16dc922e815a60e9a4f3ce6d49a3bcf7f95fe",
       "transactionType": "CREATE",
-      "contractName": "SupplyChain",
-      "contractAddress": "0xcd719932a0f99be0fec3bf0cd6056162a831d2e1",
+      "contractName": "SupplyChain",contractAddress": "0xcd719932a0f99be0fec3bf0cd6056162a831d2e1",
+      "
       "function": null,
       "arguments": null,
       "transaction": {

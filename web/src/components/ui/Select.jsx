@@ -12,7 +12,7 @@ const Select = forwardRef(({
   ...props 
 }, ref) => {
   return (
-    <div style={{ position: 'relative', width: fullWidth ? '100%' : 'auto' }}>
+    <div style={{ position: 'relative', width: fullWidth ? '100%' : 'auto', zIndex: 1 }}>
       <select
         ref={ref}
         value={value}
@@ -34,6 +34,8 @@ const Select = forwardRef(({
           appearance: 'none',
           transition: 'all 0.2s',
           opacity: disabled ? 0.5 : 1,
+          position: 'relative',
+          zIndex: 2,
           ...style,
         }}
         onFocus={(e) => {
@@ -58,6 +60,7 @@ const Select = forwardRef(({
           transform: 'translateY(-50%)',
           pointerEvents: 'none',
           color: '#6b7280',
+          zIndex: 1,
         }}
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">

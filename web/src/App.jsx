@@ -46,10 +46,10 @@ function App() {
       setAccount(selected);
       setManualDisconnect(false); // Reset flag al conectar
 
-      // Cargar datos del usuario al conectar
-      await loadUser(null, selected);
-      // Cargar info del admin al conectar
+      // IMPORTANTE: Cargar info del admin PRIMERO para detectar correctamente si es admin
       await loadAdminInfo(selected);
+      // Luego cargar datos del usuario
+      await loadUser(null, selected);
       await loadMyProducts(null, selected);
     } catch (err) {
       console.error("Error al conectar wallet:", err);
@@ -106,15 +106,31 @@ function App() {
       setAdminAddress(adminAddr);
       setHasAdmin(hasAdminValue);
       
-      // Verificar si la cuenta actual es admin
+      // Verificar si la cuenta actual es admin de dos formas:
+      // 1. Por dirección (comparar con contract.admin())
+      // 2. Por rol del usuario (si tiene role = 5 = Admin)
       if (adminAddr && adminAddr !== '0x0000000000000000000000000000000000000000') {
-        setIsAdmin(adminAddr.toLowerCase() === addr.toLowerCase());
+        const isAdminByAddress = adminAddr.toLowerCase() === addr.toLowerCase();
+        
+        // También verificar el rol del usuario
+        try {
+          const userData = await contract.getUserByAddress(addr);
+          const userRole = Number(userData.role);
+          const isAdminByRole = userRole === 5; // Role.Admin = 5
+          
+          // Es admin si cumple cualquiera de las dos condiciones
+          setIsAdmin(isAdminByAddress || isAdminByRole);
+        } catch {
+          // Si falla getUserByAddress, solo usar comparación de dirección
+          setIsAdmin(isAdminByAddress);
+        }
       } else {
         setIsAdmin(false);
       }
     } catch (err) {
       console.error("Error al cargar admin:", err);
-      setHasAdmin(false); // Si hay error, asumir que no hay admin
+      setHasAdmin(false);
+      setIsAdmin(false);
     }
   };
 
@@ -125,7 +141,11 @@ function App() {
       setError(null);
 
       const addr = providedAccount || account;
-      if (!addr) return;
+      if (!addr) {
+        setUser(null);
+        setLoadingUser(false);
+        return;
+      }
 
       const { contract } = existingContract
         ? { contract: existingContract }
@@ -141,7 +161,12 @@ function App() {
       }
     } catch (err) {
       console.error("Error al cargar usuario:", err);
-      setError("No se pudo cargar la información del usuario.");
+      // No mostrar error si simplemente no está registrado
+      if (!err?.message?.includes("No user")) {
+        setError("No se pudo cargar la información del usuario.");
+      } else {
+        setUser(null);
+      }
     } finally {
       setLoadingUser(false);
     }
@@ -156,6 +181,7 @@ function App() {
       const addr = providedAccount || account;
       if (!addr) {
         setMyTokens([]);
+        setLoadingTokens(false);
         return;
       }
 
@@ -213,8 +239,9 @@ function App() {
         if (accounts && accounts.length > 0) {
           const selected = accounts[0];
           setAccount(selected);
-          await loadUser(null, selected);
+          // Cargar admin info primero
           await loadAdminInfo(selected);
+          await loadUser(null, selected);
           await loadMyProducts(null, selected);
         }
       } catch (err) {
@@ -223,6 +250,7 @@ function App() {
     };
 
     init();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 5) Detectar cambios de cuenta en MetaMask
@@ -230,37 +258,37 @@ function App() {
     if (!window.ethereum) return;
 
     const handleAccountsChanged = async (accounts) => {
-      console.log('🔄 accountsChanged event:', accounts);
-      
       // Solo procesar si no es una desconexión manual
       if (manualDisconnect) {
-        console.log('⏸️ Ignorando accountsChanged porque fue desconexión manual');
         return;
       }
 
       if (accounts.length === 0) {
-        console.log('🔌 No hay cuentas, desconectando...');
         disconnectWallet();
-      } else if (accounts[0] !== account) {
-        console.log('👤 Cambio de cuenta detectado:', {
-          anterior: account,
-          nueva: accounts[0],
-        });
-        
-        // Usuario cambió de cuenta
+      } else {
         const newAccount = accounts[0];
-        setAccount(newAccount);
-        setManualDisconnect(false); // Reset flag al cambiar cuenta
-        
-        await loadUser(null, newAccount);
-        await loadAdminInfo(newAccount);
-        await loadMyProducts(null, newAccount);
+        const currentAccountLower = account?.toLowerCase() ?? '';
+        const newAccountLower = newAccount.toLowerCase();
+
+        // Si la cuenta cambió o es la primera vez que se conecta
+        if (!account || currentAccountLower !== newAccountLower) {
+          setAccount(newAccount);
+          setManualDisconnect(false);
+          
+          // Cargar datos del usuario con la nueva cuenta
+          // IMPORTANTE: Cargar admin info primero
+          try {
+            await loadAdminInfo(newAccount);
+            await loadUser(null, newAccount);
+            await loadMyProducts(null, newAccount);
+          } catch (error) {
+            console.error('Error cargando datos:', error);
+          }
+        }
       }
     };
 
     const handleChainChanged = () => {
-      console.log('🔄 Chain changed, reloading page...');
-      // Recargar la página cuando cambie la red
       window.location.reload();
     };
 
@@ -274,6 +302,7 @@ function App() {
         window.ethereum.removeListener("chainChanged", handleChainChanged);
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account, manualDisconnect]);
 
   return (

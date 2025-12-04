@@ -8,6 +8,7 @@ const Textarea = forwardRef(({
   rows = 3,
   className = '',
   style = {},
+  fullWidth = true,
   ...props 
 }, ref) => {
   return (
@@ -20,7 +21,8 @@ const Textarea = forwardRef(({
       rows={rows}
       className={className}
       style={{
-        width: '100%',
+        width: fullWidth ? '100%' : 'auto',
+        minWidth: fullWidth ? 'auto' : '300px',
         padding: '10px 12px',
         fontSize: '14px',
         color: '#374151',

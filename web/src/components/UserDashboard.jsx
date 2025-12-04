@@ -1,18 +1,22 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { getContract } from "../contract";
 import RegisterSection from "../RegisterSection";
+import TransfersPanel from "./TransfersPanel";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
 import Textarea from "./ui/Textarea";
+import Select from "./ui/Select";
+import Badge from "./ui/Badge";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "./ui/Card";
 import Label from "./ui/Label";
 
 const ROLE_LABELS = [
-  "Sin rol",
-  "Productor",
-  "Fábrica",
-  "Retailer",
-  "Consumidor",
+  "Sin rol",      // 0
+  "Productor",    // 1
+  "Fábrica",      // 2
+  "Retailer",     // 3
+  "Consumidor",   // 4
+  "Administrador" // 5
 ];
 
 const STATUS_LABELS = [
@@ -28,6 +32,7 @@ const ROLE_ICONS = {
   2: "🏭", // Factory
   3: "🏪", // Retailer
   4: "🛒", // Consumer
+  5: "👑", // Admin
 };
 
 const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loadingTokens, tokensError, onReloadTokens, hasAdmin }) => {
@@ -37,6 +42,15 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
   const [producerLoading, setProducerLoading] = useState(false);
   const [producerError, setProducerError] = useState(null);
   const [producerSuccess, setProducerSuccess] = useState(null);
+
+  // Estados para transferencia
+  const [transferTokenId, setTransferTokenId] = useState(null);
+  const [transferRecipient, setTransferRecipient] = useState("");
+  const [transferAmount, setTransferAmount] = useState("");
+  const [transferLoading, setTransferLoading] = useState(false);
+  const [transferError, setTransferError] = useState(null);
+  const [transferSuccess, setTransferSuccess] = useState(null);
+  const [availableRecipients, setAvailableRecipients] = useState([]);
 
   const roleLabel = user ? ROLE_LABELS[Number(user.role)] : "Sin rol";
   const statusLabel = user ? STATUS_LABELS[Number(user.status)] : "Sin estado";
@@ -103,6 +117,143 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
   const isPending = user && Number(user.status) === 1;
   const isRejected = user && Number(user.status) === 3;
   const isProducer = user && Number(user.role) === 1;
+  const userRole = user ? Number(user.role) : 0;
+  const canTransfer = userRole >= 1 && userRole <= 3; // Producer, Factory, Retailer pueden transferir
+
+  // Obtener rol objetivo según flujo: Producer->Factory->Retailer->Consumer
+  const getTargetRole = (currentRole) => {
+    if (currentRole === 1) return 2; // Producer -> Factory
+    if (currentRole === 2) return 3; // Factory -> Retailer
+    if (currentRole === 3) return 4; // Retailer -> Consumer
+    return 0; // Consumer y Admin no pueden transferir
+  };
+
+  // Cargar destinatarios disponibles
+  useEffect(() => {
+    const loadRecipients = async () => {
+      if (!user || !transferTokenId) return;
+      
+      try {
+        const targetRole = getTargetRole(userRole);
+        if (targetRole === 0) {
+          setAvailableRecipients([]);
+          return;
+        }
+
+        const { contract } = await getContract();
+        
+        // Obtener todos los eventos UserRequested para encontrar usuarios
+        const filter = contract.filters.UserRequested();
+        const events = await contract.queryFilter(filter, 0);
+        
+        const recipients = [];
+        const seenAddresses = new Set();
+        
+        for (const event of events) {
+          try {
+            const userAddress = event.args[1];
+            const addressLower = userAddress.toLowerCase();
+            
+            // Skip si ya procesamos esta dirección o es la cuenta actual
+            if (seenAddresses.has(addressLower) || addressLower === account.toLowerCase()) {
+              continue;
+            }
+            
+            // Verificar si tiene el rol objetivo y está aprobado
+            const userData = await contract.getUserByAddress(userAddress);
+            const role = Number(userData.role);
+            const status = Number(userData.status);
+            
+            if (role === targetRole && status === 2) { // Status 2 = Approved
+              recipients.push({
+                address: userAddress,
+                role: role,
+              });
+              seenAddresses.add(addressLower);
+            }
+          } catch (err) {
+            console.error('Error verificando usuario:', err);
+          }
+        }
+        
+        setAvailableRecipients(recipients);
+      } catch (error) {
+        console.error('Error cargando destinatarios:', error);
+        setAvailableRecipients([]);
+      }
+    };
+
+    if (transferTokenId) {
+      loadRecipients();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transferTokenId, user, account]);
+
+  // Iniciar transferencia
+  const startTransfer = async () => {
+    if (!transferRecipient || !transferAmount || !transferTokenId) {
+      setTransferError("Completa todos los campos.");
+      return;
+    }
+
+    const amountNum = Number(transferAmount);
+    if (amountNum <= 0) {
+      setTransferError("La cantidad debe ser mayor a 0.");
+      return;
+    }
+
+    setTransferLoading(true);
+    setTransferError(null);
+    setTransferSuccess(null);
+
+    try {
+      const { contract } = await getContract();
+      
+      const tx = await contract.transfer(transferRecipient, transferTokenId, amountNum);
+      await tx.wait();
+      
+      setTransferSuccess("Transferencia enviada. El destinatario debe aceptarla.");
+      
+      // Limpiar formulario
+      setTransferTokenId(null);
+      setTransferRecipient("");
+      setTransferAmount("");
+      
+      // Recargar productos
+      if (onReloadTokens) {
+        await onReloadTokens();
+      }
+    } catch (error) {
+      console.error('Error en transferencia:', error);
+      if (error.code === "ACTION_REJECTED" || error.code === 4001) {
+        setTransferError("Transacción cancelada en MetaMask.");
+      } else {
+        setTransferError("Error al enviar transferencia. Revisa la consola.");
+      }
+    } finally {
+      setTransferLoading(false);
+    }
+  };
+
+  // Abrir modal de transferencia
+  const openTransferModal = async (tokenId) => {
+    setTransferTokenId(tokenId);
+    setTransferRecipient("");
+    setTransferAmount("");
+    setTransferError(null);
+    setTransferSuccess(null);
+    await loadRecipients(tokenId);
+  };
+
+  // Cerrar modal de transferencia
+  const closeTransferModal = () => {
+    setTransferTokenId(null);
+    setTransferRecipient("");
+    setTransferAmount("");
+    setTransferError(null);
+    setTransferSuccess(null);
+    setAvailableRecipients([]);
+  };
 
   return (
     <div>
@@ -114,6 +265,9 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
           borderRadius: "12px",
           padding: "24px 28px",
           border: "1px solid #e5e7eb",
+          maxWidth: "700px",
+          marginLeft: "auto",
+          marginRight: "auto",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
@@ -148,31 +302,30 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
             <div
               style={{
                 backgroundColor: isApproved ? "#dcfce7" : isPending ? "#fef3c7" : "#fee2e2",
-                padding: "16px",
-                borderRadius: "8px",
-                marginBottom: "12px",
+                padding: "20px",
+                borderRadius: "10px",
+                marginBottom: "16px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "20px",
+                flexWrap: "wrap",
               }}
             >
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                <div>
-                  <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>Rol</p>
-                  <p style={{ margin: "4px 0 0 0", fontSize: "20px", fontWeight: "600", color: "#111827" }}>
-                    {roleLabel}
-                  </p>
-                </div>
-                <div>
-                  <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>Estado</p>
-                  <p
-                    style={{
-                      margin: "4px 0 0 0",
-                      fontSize: "20px",
-                      fontWeight: "700",
-                      color: isApproved ? "#16a34a" : isPending ? "#ca8a04" : "#dc2626",
-                    }}
-                  >
-                    {statusLabel}
-                  </p>
-                </div>
+              <div style={{ textAlign: "center" }}>
+                <p style={{ margin: 0, fontSize: "12px", color: "#6b7280", marginBottom: "8px" }}>Rol</p>
+                <Badge variant="info" style={{ fontSize: "14px", padding: "6px 16px" }}>
+                  {roleIcon} {roleLabel}
+                </Badge>
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <p style={{ margin: 0, fontSize: "12px", color: "#6b7280", marginBottom: "8px" }}>Estado</p>
+                <Badge 
+                  variant={isApproved ? "success" : isPending ? "warning" : "error"}
+                  style={{ fontSize: "14px", padding: "6px 16px" }}
+                >
+                  {isApproved ? "✅" : isPending ? "⏳" : "❌"} {statusLabel}
+                </Badge>
               </div>
             </div>
 
@@ -250,6 +403,9 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
             borderRadius: "12px",
             padding: "24px 28px",
             border: "2px solid #16a34a",
+            maxWidth: "700px",
+            marginLeft: "auto",
+            marginRight: "auto",
           }}
         >
           <h3 style={{ marginTop: 0, marginBottom: "12px", fontSize: "20px", color: "#166534" }}>
@@ -304,14 +460,16 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
               />
             </div>
 
-            <Button
-              onClick={createProduct}
-              disabled={producerLoading}
-              variant="success"
-              style={{ width: "100%" }}
-            >
-              {producerLoading ? "⏳ Creando producto..." : "✨ Crear Producto"}
-            </Button>
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <Button
+                onClick={createProduct}
+                disabled={producerLoading}
+                variant="success"
+                size="lg"
+              >
+                {producerLoading ? "⏳ Creando producto..." : "✨ Crear Producto"}
+              </Button>
+            </div>
 
             {producerSuccess && (
               <div
@@ -460,6 +618,20 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
                     >
                       Cantidad
                     </th>
+                    {canTransfer && (
+                      <th
+                        style={{
+                          textAlign: "center",
+                          padding: "12px",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          color: "#374151",
+                          borderBottom: "2px solid #e5e7eb",
+                        }}
+                      >
+                        Acciones
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -492,6 +664,17 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
                       >
                         {token.balance}
                       </td>
+                      {canTransfer && (
+                        <td style={{ padding: "12px", textAlign: "center" }}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openTransferModal(token.id)}
+                          >
+                            📤 Transferir
+                          </Button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -500,6 +683,133 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
           )}
         </div>
       )}
+
+      {/* Modal de Transferencia */}
+      {transferTokenId && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "20px",
+          }}
+          onClick={closeTransferModal}
+        >
+          <Card
+            style={{
+              maxWidth: "500px",
+              width: "100%",
+              margin: 0,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CardHeader>
+              <CardTitle>📤 Transferir Token #{transferTokenId}</CardTitle>
+              <CardDescription>
+                {userRole === 1 && "Envía materias primas a una Fábrica"}
+                {userRole === 2 && "Envía productos procesados a un Retailer"}
+                {userRole === 3 && "Envía productos a un Consumidor"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div style={{ marginBottom: "16px" }}>
+                <Label htmlFor="recipient" required>Destinatario</Label>
+                <Select
+                  id="recipient"
+                  value={transferRecipient}
+                  onChange={(e) => setTransferRecipient(e.target.value)}
+                  disabled={transferLoading}
+                >
+                  <option value="">-- Selecciona destinatario --</option>
+                  {availableRecipients.map((recipient) => (
+                    <option key={recipient.address} value={recipient.address}>
+                      {ROLE_LABELS[recipient.role]} - {recipient.address.slice(0, 8)}...{recipient.address.slice(-6)}
+                    </option>
+                  ))}
+                </Select>
+                {availableRecipients.length === 0 && (
+                  <p style={{ margin: "8px 0 0 0", fontSize: "12px", color: "#f59e0b" }}>
+                    ⚠️ No hay usuarios aprobados con el rol requerido para recibir esta transferencia.
+                  </p>
+                )}
+              </div>
+
+              <div style={{ marginBottom: "20px" }}>
+                <Label htmlFor="amount" required>Cantidad</Label>
+                <Input
+                  id="amount"
+                  type="number"
+                  min="1"
+                  value={transferAmount}
+                  onChange={(e) => setTransferAmount(e.target.value)}
+                  placeholder="Cantidad a transferir"
+                  disabled={transferLoading}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "8px" }}>
+                <Button
+                  variant="default"
+                  onClick={startTransfer}
+                  disabled={transferLoading || !transferRecipient || !transferAmount || availableRecipients.length === 0}
+                  style={{ flex: 1 }}
+                >
+                  {transferLoading ? "⏳ Enviando..." : "📤 Enviar Transferencia"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={closeTransferModal}
+                  disabled={transferLoading}
+                >
+                  Cancelar
+                </Button>
+              </div>
+
+              {transferSuccess && (
+                <div
+                  style={{
+                    marginTop: "16px",
+                    padding: "12px 16px",
+                    backgroundColor: "#dcfce7",
+                    borderRadius: "8px",
+                    border: "1px solid #bbf7d0",
+                    fontSize: "13px",
+                    color: "#166534",
+                  }}
+                >
+                  ✅ {transferSuccess}
+                </div>
+              )}
+
+              {transferError && (
+                <div
+                  style={{
+                    marginTop: "16px",
+                    padding: "12px 16px",
+                    backgroundColor: "#fee2e2",
+                    borderRadius: "8px",
+                    border: "1px solid #fecaca",
+                    fontSize: "13px",
+                    color: "#991b1b",
+                  }}
+                >
+                  ⚠️ {transferError}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Panel de Transferencias */}
+      {isApproved && <TransfersPanel account={account} user={user} />}
     </div>
   );
 };

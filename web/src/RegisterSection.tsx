@@ -15,13 +15,17 @@ const RegisterSection: React.FC<RegisterSectionProps> = ({ account, hasAdmin, on
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [previousAccount, setPreviousAccount] = useState<string | null>(null);
 
-  // Resetear el formulario cuando cambie la cuenta
+  // Resetear el formulario SOLO cuando cambie REALMENTE la cuenta
   useEffect(() => {
-    setRole(0);
-    setError(null);
-    setSuccess(false);
-  }, [account]);
+    if (previousAccount !== account) {
+      setRole(0);
+      setError(null);
+      setSuccess(false);
+      setPreviousAccount(account);
+    }
+  }, [account, previousAccount]);
 
   const handleRegister = async () => {
     if (!account) {
@@ -46,6 +50,11 @@ const RegisterSection: React.FC<RegisterSectionProps> = ({ account, hasAdmin, on
         const tx = await contract.claimAdmin();
         await tx.wait();
         setSuccess(true);
+        
+        // Esperar un poco y luego recargar la página para actualización completa
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        window.location.reload();
+        return;
       } else {
         // Enum Role en Solidity:
         // 0 = None, 1 = Producer, 2 = Factory, 3 = Retailer, 4 = Consumer
@@ -56,7 +65,7 @@ const RegisterSection: React.FC<RegisterSectionProps> = ({ account, hasAdmin, on
       
       // Notificar al componente padre para que recargue los datos
       if (onRegisterSuccess) {
-        onRegisterSuccess();
+        await onRegisterSuccess();
       }
 
       // Limpiar el formulario
@@ -89,7 +98,7 @@ const RegisterSection: React.FC<RegisterSectionProps> = ({ account, hasAdmin, on
         </CardDescription>
       </CardHeader>
       
-      <CardContent>
+      <CardContent style={{ position: 'relative', zIndex: 'auto' }}>
         {account && (
           <div style={{ 
             padding: "12px", 
@@ -107,7 +116,7 @@ const RegisterSection: React.FC<RegisterSectionProps> = ({ account, hasAdmin, on
           </div>
         )}
 
-        <div style={{ marginBottom: "20px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <Select
             value={role}
             onChange={(e) => setRole(Number(e.target.value))}
@@ -120,15 +129,18 @@ const RegisterSection: React.FC<RegisterSectionProps> = ({ account, hasAdmin, on
             <option value={3}>🏪 Retailer</option>
             <option value={4}>🛒 Consumidor</option>
           </Select>
-        </div>
 
-        <Button 
-          onClick={handleRegister} 
-          disabled={loading || !account || role === 0}
-          variant="default"
-        >
-          {loading ? "⏳ Enviando..." : "✨ Solicitar Registro"}
-        </Button>
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <Button 
+              onClick={handleRegister} 
+              disabled={loading || !account || role === 0}
+              variant="default"
+              size="lg"
+            >
+              {loading ? "⏳ Enviando..." : "✨ Solicitar Registro"}
+            </Button>
+          </div>
+        </div>
 
         {success && (
           <div style={{ 

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 contract SupplyChain {
-    enum Role { None, Producer, Factory, Retailer, Consumer }
+    enum Role { None, Producer, Factory, Retailer, Consumer, Admin }
     enum UserStatus { None, Pending, Approved, Rejected,Canceled }
     enum TransferStatus { Pending, Accepted, Rejected }
 
@@ -110,7 +110,7 @@ contract SupplyChain {
         users[userId] = User({
             id: userId,
             wallet: msg.sender,
-            role: Role.None,
+            role: Role.Admin,
             status: UserStatus.Approved
         });
         

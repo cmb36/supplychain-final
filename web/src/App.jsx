@@ -1,25 +1,9 @@
 import { useState, useEffect } from "react";
 import "./App.css";
 import { getContract } from "./contract";
-import RegisterSection from "./RegisterSection";
-
-
-// Mapas para traducir enums del contrato
-const ROLE_LABELS = [
-  "Sin rol",    // 0 = None
-  "Productor",  // 1 = Producer
-  "Fábrica",    // 2 = Factory
-  "Retailer",   // 3 = Retailer
-  "Consumidor", // 4 = Consumer
-];
-
-const STATUS_LABELS = [
-  "Sin estado", // 0 = None
-  "Pendiente",  // 1 = Pending
-  "Aprobado",   // 2 = Approved
-  "Rechazado",  // 3 = Rejected
-  "Inactivo",   // 4 = Inactive
-];
+import Header from "./components/Header";
+import AdminDashboard from "./components/AdminDashboard";
+import UserDashboard from "./components/UserDashboard";
 
 function App() {
   // ESTADOS BÁSICOS
@@ -27,28 +11,19 @@ function App() {
   const [user, setUser] = useState(null);
   const [loadingUser, setLoadingUser] = useState(false);
   const [error, setError] = useState(null);
-  const [loadingRequest, setLoadingRequest] = useState(false);
 
   // ESTADO PARA ADMIN
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminAddress, setAdminAddress] = useState(null);
-  const [adminLoading, setAdminLoading] = useState(false);
-  const [adminError, setAdminError] = useState(null);
-  const [adminUserId, setAdminUserId] = useState("");   // 👈 ESTE ES EL QUE FALTA/DA ERROR
-  const [adminRole, setAdminRole] = useState("1");      // 1 = Productor por defecto
+  const [hasAdmin, setHasAdmin] = useState(true); // Por defecto true hasta verificar
 
-    // ESTADO PARA PRODUCTOR (crear productos)
-  const [producerName, setProducerName] = useState("");
-  const [producerSupply, setProducerSupply] = useState("");
-  const [producerFeatures, setProducerFeatures] = useState("");
-  const [producerLoading, setProducerLoading] = useState(false);
-  const [producerError, setProducerError] = useState(null);
-
-    // INVENTARIO DEL USUARIO (productos / tokens)
+  // INVENTARIO DEL USUARIO (productos / tokens)
   const [myTokens, setMyTokens] = useState([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
   const [tokensError, setTokensError] = useState(null);
 
+  // Flag para evitar reconexión automática después de desconectar
+  const [manualDisconnect, setManualDisconnect] = useState(false);
 
   // 1) Conectar wallet
   const connectWallet = async () => {
@@ -69,38 +44,77 @@ function App() {
 
       const selected = accounts[0];
       setAccount(selected);
+      setManualDisconnect(false); // Reset flag al conectar
 
       // Cargar datos del usuario al conectar
       await loadUser(null, selected);
       // Cargar info del admin al conectar
       await loadAdminInfo(selected);
       await loadMyProducts(null, selected);
-
     } catch (err) {
       console.error("Error al conectar wallet:", err);
       alert("No se pudo conectar la wallet. Revisa MetaMask.");
     }
   };
 
-  // 1-bis) Cargar información del admin y comprobar si la cuenta conectada es el admin
+  // 1-bis) Desconectar wallet completamente
+  const disconnectWallet = async () => {
+    // Marcar como desconexión manual para evitar reconexión automática
+    setManualDisconnect(true);
+
+    // Limpiar estados de la aplicación
+    setAccount(null);
+    setUser(null);
+    setIsAdmin(false);
+    setAdminAddress(null);
+    setHasAdmin(true);
+    setMyTokens([]);
+    setError(null);
+    setTokensError(null);
+
+    // Revocar permisos de MetaMask
+    try {
+      if (window.ethereum) {
+        await window.ethereum.request({
+          method: 'wallet_revokePermissions',
+          params: [{ eth_accounts: {} }],
+        });
+      }
+    } catch (error) {
+      console.warn('Error revoking MetaMask permissions:', error);
+      // Continuar con la desconexión aunque falle la revocación
+    }
+
+    // Limpiar todos los almacenamientos
+    localStorage.clear();
+    sessionStorage.clear();
+
+    // Recargar la página para asegurar un estado completamente limpio
+    window.location.reload();
+  };
+
+  // 1-ter) Cargar información del admin y comprobar si la cuenta conectada es el admin
   const loadAdminInfo = async (providedAccount = null) => {
     try {
-      setAdminLoading(true);
-      setAdminError(null);
-
       const addr = providedAccount || account;
       if (!addr) return;
 
       const { contract } = await getContract();
       const adminAddr = await contract.admin();
+      const hasAdminValue = await contract.hasAdmin();
 
       setAdminAddress(adminAddr);
-      setIsAdmin(adminAddr.toLowerCase() === addr.toLowerCase());
+      setHasAdmin(hasAdminValue);
+      
+      // Verificar si la cuenta actual es admin
+      if (adminAddr && adminAddr !== '0x0000000000000000000000000000000000000000') {
+        setIsAdmin(adminAddr.toLowerCase() === addr.toLowerCase());
+      } else {
+        setIsAdmin(false);
+      }
     } catch (err) {
       console.error("Error al cargar admin:", err);
-      setAdminError("No se pudo cargar la información del admin.");
-    } finally {
-      setAdminLoading(false);
+      setHasAdmin(false); // Si hay error, asumir que no hay admin
     }
   };
 
@@ -133,200 +147,7 @@ function App() {
     }
   };
 
-  // 3) Solicitar rol (por ahora solo Productor = 1)
-  const requestRole = async (roleValue) => {
-    if (!account) {
-      alert("Primero conecta tu wallet");
-      return;
-    }
-
-    try {
-      setError(null);
-      setLoadingRequest(true);
-
-      const { contract } = await getContract();
-
-      const tx = await contract.requestUserRole(roleValue); // 1 = Productor
-      await tx.wait();
-
-      // Después de confirmar, recargamos la info del usuario
-      await loadUser(contract, account);
-    } catch (err) {
-      console.error("Error al solicitar rol:", err);
-
-      if (err.code === "ACTION_REJECTED" || err.code === 4001) {
-        setError("Has cancelado la transacción en MetaMask.");
-      } else {
-        setError("Error al solicitar el rol. Revisa la consola.");
-      }
-    } finally {
-      setLoadingRequest(false);
-    }
-  };
-
-  // 4) Acciones de ADMIN: aprobar, rechazar, desactivar usuario
-  const approveUser = async () => {
-    if (!isAdmin) {
-      alert("Solo el admin puede aprobar usuarios.");
-      return;
-    }
-
-    const userIdNum = parseInt(adminUserId, 10);
-    const roleNum = parseInt(adminRole, 10);
-
-    if (isNaN(userIdNum) || userIdNum <= 0) {
-      setAdminError("Introduce un ID de usuario válido.");
-      return;
-    }
-
-    if (isNaN(roleNum) || roleNum < 1 || roleNum > 4) {
-      setAdminError("Selecciona un rol válido (1 a 4).");
-      return;
-    }
-
-    try {
-      setAdminError(null);
-      setAdminLoading(true);
-
-      const { contract } = await getContract();
-      const tx = await contract.approveUser(userIdNum, roleNum);
-      await tx.wait();
-
-      // Opcional: recargar tu propio usuario por si te auto-apruebas
-      await loadUser(null, account);
-    } catch (err) {
-      console.error("Error al aprobar usuario:", err);
-      if (err.code === "ACTION_REJECTED" || err.code === 4001) {
-        setAdminError("Has cancelado la transacción en MetaMask.");
-      } else {
-        setAdminError("Error al aprobar usuario. Revisa la consola.");
-      }
-    } finally {
-      setAdminLoading(false);
-    }
-  };
-
-  const rejectUser = async () => {
-    if (!isAdmin) {
-      alert("Solo el admin puede rechazar usuarios.");
-      return;
-    }
-
-    const userIdNum = parseInt(adminUserId, 10);
-    if (isNaN(userIdNum) || userIdNum <= 0) {
-      setAdminError("Introduce un ID de usuario válido.");
-      return;
-    }
-
-    try {
-      setAdminError(null);
-      setAdminLoading(true);
-
-      const { contract } = await getContract();
-      const tx = await contract.rejectUser(userIdNum);
-      await tx.wait();
-    } catch (err) {
-      console.error("Error al rechazar usuario:", err);
-      if (err.code === "ACTION_REJECTED" || err.code === 4001) {
-        setAdminError("Has cancelado la transacción en MetaMask.");
-      } else {
-        setAdminError("Error al rechazar usuario. Revisa la consola.");
-      }
-    } finally {
-      setAdminLoading(false);
-    }
-  };
-
-  const deactivateUser = async () => {
-    if (!isAdmin) {
-      alert("Solo el admin puede desactivar usuarios.");
-      return;
-    }
-
-
-    const userIdNum = parseInt(adminUserId, 10);
-    if (isNaN(userIdNum) || userIdNum <= 0) {
-      setAdminError("Introduce un ID de usuario válido.");
-      return;
-    }
-
-    try {
-      setAdminError(null);
-      setAdminLoading(true);
-
-      const { contract } = await getContract();
-      const tx = await contract.deactivateUser(userIdNum);
-      await tx.wait();
-    } catch (err) {
-      console.error("Error al desactivar usuario:", err);
-      if (err.code === "ACTION_REJECTED" || err.code === 4001) {
-        setAdminError("Has cancelado la transacción en MetaMask.");
-      } else {
-        setAdminError("Error al desactivar usuario. Revisa la consola.");
-      }
-    } finally {
-      setAdminLoading(false);
-    }
- };  // fin deactivateUser
-
-  // Crear producto (solo para productores aprobados)
-  const createProduct = async () => {
-    if (!account) {
-      setProducerError("Primero conecta tu wallet.");
-      return;
-    }
-
-    try {
-      setProducerError(null);
-      setProducerLoading(true);
-
-      const { contract } = await getContract();
-
-      // Validaciones básicas
-      if (!producerName.trim()) {
-        setProducerError("El nombre del producto es obligatorio.");
-        return;
-      }
-      if (!producerSupply || Number(producerSupply) <= 0) {
-        setProducerError("La cantidad (supply) debe ser mayor a 0.");
-        return;
-      }
-
-      // Texto libre de características (opcional)
-      const featuresText = producerFeatures.trim(); // puede estar vacío
-
-      // parentId = 0 porque es un producto "raíz" del Productor
-      const parentId = 0;
-
-      // 👇 Llamada EXACTA a la firma del contrato:
-      // createToken(string name, string features, uint256 parentId, uint256 amount)
-      const tx = await contract.createToken(
-        producerName,               // name
-        featuresText,               // features (texto libre)
-        parentId,                   // 0 para producto base
-        Number(producerSupply)      // amount
-      );
-
-      await tx.wait();
-
-      // Recargar inventario del usuario después de crear el producto
-      await loadMyProducts(contract, account);
-
-
-      // Limpiar formularios
-      setProducerName("");
-      setProducerSupply("");
-      setProducerFeatures("");
-
-    } catch (err) {
-      console.error("Error al crear producto:", err);
-      setProducerError("No se pudo crear el producto. Revisa MetaMask y la consola.");
-    } finally {
-      setProducerLoading(false);
-    }
-  };
-
-  // Cargar productos del usuario conectado (inventario básico)
+  // 3) Cargar productos del usuario conectado (inventario básico)
   const loadMyProducts = async (existingContract = null, providedAccount = null) => {
     try {
       setLoadingTokens(true);
@@ -343,7 +164,7 @@ function App() {
         : await getContract();
 
       // Obtener IDs de tokens que pertenecen a este usuario
-      const ids = await contract.getUserTokens(addr); // uint256[]
+      const ids = await contract.getUserTokens(addr);
 
       const tokens = [];
 
@@ -379,9 +200,7 @@ function App() {
     }
   };
 
-
-
-  // 5) Intentar detectar cuenta ya conectada al cargar la página
+  // 4) Intentar detectar cuenta ya conectada al cargar la página
   useEffect(() => {
     const init = async () => {
       try {
@@ -406,370 +225,163 @@ function App() {
     init();
   }, []);
 
-  // 6) Etiquetas bonitas para mostrar
-  const roleLabel = user ? ROLE_LABELS[Number(user.role)] : "Sin rol";
-  const statusLabel = user ? STATUS_LABELS[Number(user.status)] : "Sin estado";
-  const userId = user ? Number(user.id) : 0;
+  // 5) Detectar cambios de cuenta en MetaMask
+  useEffect(() => {
+    if (!window.ethereum) return;
+
+    const handleAccountsChanged = async (accounts) => {
+      console.log('🔄 accountsChanged event:', accounts);
+      
+      // Solo procesar si no es una desconexión manual
+      if (manualDisconnect) {
+        console.log('⏸️ Ignorando accountsChanged porque fue desconexión manual');
+        return;
+      }
+
+      if (accounts.length === 0) {
+        console.log('🔌 No hay cuentas, desconectando...');
+        disconnectWallet();
+      } else if (accounts[0] !== account) {
+        console.log('👤 Cambio de cuenta detectado:', {
+          anterior: account,
+          nueva: accounts[0],
+        });
+        
+        // Usuario cambió de cuenta
+        const newAccount = accounts[0];
+        setAccount(newAccount);
+        setManualDisconnect(false); // Reset flag al cambiar cuenta
+        
+        await loadUser(null, newAccount);
+        await loadAdminInfo(newAccount);
+        await loadMyProducts(null, newAccount);
+      }
+    };
+
+    const handleChainChanged = () => {
+      console.log('🔄 Chain changed, reloading page...');
+      // Recargar la página cuando cambie la red
+      window.location.reload();
+    };
+
+    window.ethereum.on("accountsChanged", handleAccountsChanged);
+    window.ethereum.on("chainChanged", handleChainChanged);
+
+    // Cleanup
+    return () => {
+      if (window.ethereum.removeListener) {
+        window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
+        window.ethereum.removeListener("chainChanged", handleChainChanged);
+      }
+    };
+  }, [account, manualDisconnect]);
 
   return (
     <div
       style={{
         minHeight: "100vh",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
+        width: "100%",
         backgroundColor: "#f5f7fb",
-        fontFamily:
-          "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       }}
     >
+      {/* Header sticky siempre visible */}
+      <Header
+        account={account}
+        isAdmin={isAdmin}
+        onConnect={connectWallet}
+        onDisconnect={disconnectWallet}
+      />
+
+      {/* Contenido principal */}
       <div
         style={{
           width: "100%",
-          maxWidth: "900px",
-          backgroundColor: "white",
-          borderRadius: "16px",
-          boxShadow: "0 10px 30px rgba(15, 23, 42, 0.12)",
-          padding: "32px 40px",
+          maxWidth: "1200px",
+          margin: "0 auto",
+          padding: "32px 20px",
         }}
       >
-        {/* Cabecera */}
-        <div style={{ textAlign: "center", marginBottom: "24px" }}>
-          <h1
+
+        {/* Vista según si es Admin o Usuario Regular */}
+        {account && (
+          <>
+            {isAdmin ? (
+              <AdminDashboard account={account} adminAddress={adminAddress} />
+            ) : (
+              <UserDashboard
+                account={account}
+                user={user}
+                loadingUser={loadingUser}
+                onReloadUser={() => loadUser(null, account)}
+                myTokens={myTokens}
+                loadingTokens={loadingTokens}
+                tokensError={tokensError}
+                onReloadTokens={() => loadMyProducts(null, account)}
+                hasAdmin={hasAdmin}
+              />
+            )}
+          </>
+        )}
+
+        {/* Mensaje cuando no hay wallet conectada */}
+        {!account && (
+          <div
             style={{
-              fontSize: "32px",
-              margin: 0,
-              fontWeight: "700",
-              color: "#1f2933",
+              backgroundColor: "white",
+              borderRadius: "12px",
+              padding: "40px 32px",
+              textAlign: "center",
+              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+              border: "1px solid #e5e7eb",
             }}
           >
-            SupplyChain Tracker
-          </h1>
-
-          <button
-            onClick={connectWallet}
-            style={{
-              marginTop: "20px",
-              padding: "10px 24px",
-              backgroundColor: "#22c55e",
-              color: "white",
-              border: "none",
-              borderRadius: "999px",
-              fontSize: "16px",
-              fontWeight: "600",
-              cursor: "pointer",
-            }}
-          >
-            Conectar Wallet
-          </button>
-
-          {account && (
-            <>
-              <p style={{ marginTop: "12px", fontSize: "14px", color: "#4b5563" }}>
-                <strong>Wallet conectada:</strong> {account}
-              </p>
-
-              {adminAddress && (
-                <p style={{ marginTop: "4px", fontSize: "14px", color: "#4b5563" }}>
-                  <strong>Admin del contrato:</strong> {adminAddress}{" "}
-                  {isAdmin ? "(esta cuenta es el admin)" : ""}
-                </p>
-              )}
-            </>
-          )}
-
-        </div>
-
-        {/* Tarjeta de Mi Usuario */}
-        <div
-          style={{
-            marginTop: "16px",
-            backgroundColor: "#f9fafb",
-            borderRadius: "12px",
-            padding: "24px 28px",
-          }}
-        >
-          <h2
-            style={{
-              marginTop: 0,
-              marginBottom: "16px",
-              fontSize: "22px",
-              color: "#111827",
-            }}
-          >
-            Mi Usuario
-          </h2>
-
-          {loadingUser ? (
-            <p style={{ color: "#6b7280" }}>Cargando información del usuario...</p>
-          ) : user ? (
-            <>
-              <p style={{ margin: "4px 0", fontSize: "15px" }}>
-                <strong>ID de usuario:</strong> {userId}
-              </p>
-              <p style={{ margin: "4px 0", fontSize: "15px" }}>
-                <strong>Rol actual:</strong> {roleLabel}
-              </p>
-              <p style={{ margin: "4px 0", fontSize: "15px" }}>
-                <strong>Estado:</strong> {statusLabel}
-              </p>
-            </>
-          ) : (
-            <p style={{ color: "#6b7280" }}>
-              No tienes usuario registrado todavía en el contrato.
+            <div style={{ fontSize: "56px", marginBottom: "16px" }}>🔗</div>
+            <h2 style={{ margin: "0 0 12px 0", fontSize: "24px", color: "#111827", fontWeight: "700" }}>
+              Bienvenido a SupplyChain Tracker
+            </h2>
+            <p style={{ margin: "0 0 32px 0", fontSize: "15px", color: "#6b7280", lineHeight: "1.6", maxWidth: "500px", marginLeft: "auto", marginRight: "auto" }}>
+              Conecta tu wallet MetaMask usando el botón en la parte superior para acceder al sistema de trazabilidad.
             </p>
-          )}
-
-          {error && (
-            <p style={{ color: "#dc2626", marginTop: "10px" }}>{error}</p>
-          )}
-
-          
-          {/* PANEL ADMIN */}
-          {isAdmin && (
             <div
               style={{
-                marginTop: "24px",
-                marginBottom: "8px",
-                paddingTop: "16px",
-                borderTop: "1px solid #e5e7eb",
+                display: "inline-block",
+                padding: "20px 28px",
+                backgroundColor: "#f0f9ff",
+                borderRadius: "10px",
+                border: "1px solid #bae6fd",
+                textAlign: "left",
               }}
             >
-              <h3
-                style={{
-                  fontSize: "18px",
-                  marginBottom: "10px",
-                  color: "#111827",
-                }}
-              >
-                Panel de administrador
-              </h3>
-
-              <p style={{ fontSize: "14px", color: "#4b5563", marginBottom: "10px" }}>
-                Usa este panel para aprobar, rechazar o desactivar usuarios.
+              <p style={{ margin: "0 0 12px 0", fontSize: "14px", color: "#075985", fontWeight: "700" }}>
+                📋 Características del Sistema
               </p>
-
-              {/* Campo ID de usuario */}
-              <div style={{ marginBottom: "8px" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "14px",
-                    marginBottom: "4px",
-                    color: "#374151",
-                  }}
-                >
-                  ID de usuario
-                </label>
-                <input
-                  type="number"
-                  value={adminUserId}
-                  onChange={(e) => setAdminUserId(e.target.value)}
-                  placeholder="Por ejemplo: 1"
-                  style={{
-                    width: "160px",
-                    padding: "6px 10px",
-                    borderRadius: "8px",
-                    border: "1px solid #d1d5db",
-                    fontSize: "14px",
-                  }}
-                />
-              </div>
-
-              {/* Selector de rol */}
-              <div style={{ marginBottom: "12px" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "14px",
-                    marginBottom: "4px",
-                    color: "#374151",
-                  }}
-                >
-                  Rol a asignar (para aprobar)
-                </label>
-                <select
-                  value={adminRole}
-                  onChange={(e) => setAdminRole(e.target.value)}
-                  style={{
-                    width: "200px",
-                    padding: "6px 10px",
-                    borderRadius: "8px",
-                    border: "1px solid #d1d5db",
-                    fontSize: "14px",
-                  }}
-                >
-                  <option value="1">1 - Productor</option>
-                  <option value="2">2 - Fábrica</option>
-                  <option value="3">3 - Retailer</option>
-                  <option value="4">4 - Consumidor</option>
-                </select>
-              </div>
-
-              {/* Botones de acción */}
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                <button
-                  onClick={approveUser}
-                  disabled={adminLoading}
-                  style={{
-                    padding: "8px 14px",
-                    borderRadius: "999px",
-                    border: "none",
-                    fontSize: "14px",
-                    fontWeight: 600,
-                    backgroundColor: adminLoading ? "#9ca3af" : "#16a34a",
-                    color: "white",
-                    cursor: adminLoading ? "not-allowed" : "pointer",
-                  }}
-                >
-                  Aprobar usuario
-                </button>
-
-                <button
-                  onClick={rejectUser}
-                  disabled={adminLoading}
-                  style={{
-                    padding: "8px 14px",
-                    borderRadius: "999px",
-                    border: "none",
-                    fontSize: "14px",
-                    fontWeight: 600,
-                    backgroundColor: adminLoading ? "#9ca3af" : "#f97316",
-                    color: "white",
-                    cursor: adminLoading ? "not-allowed" : "pointer",
-                  }}
-                >
-                  Rechazar usuario
-                </button>
-
-                <button
-                  onClick={deactivateUser}
-                  disabled={adminLoading}
-                  style={{
-                    padding: "8px 14px",
-                    borderRadius: "999px",
-                    border: "none",
-                    fontSize: "14px",
-                    fontWeight: 600,
-                    backgroundColor: adminLoading ? "#9ca3af" : "#dc2626",
-                    color: "white",
-                    cursor: adminLoading ? "not-allowed" : "pointer",
-                  }}
-                >
-                  Desactivar usuario
-                </button>
-              </div>
-
-              {adminLoading && (
-                <p style={{ marginTop: "8px", fontSize: "13px", color: "#6b7280" }}>
-                  Enviando transacción como admin...
-                </p>
-              )}
-
-              {adminError && (
-                <p style={{ marginTop: "8px", fontSize: "13px", color: "#dc2626" }}>
-                  {adminError}
-                </p>
-              )}
+              <ul style={{ margin: 0, padding: 0, paddingLeft: "20px", fontSize: "13px", color: "#0c4a6e", lineHeight: "1.8" }}>
+                <li>Trazabilidad completa de productos</li>
+                <li>Gestión de roles: Producer, Factory, Retailer, Consumer</li>
+                <li>Transferencias seguras entre actores</li>
+                <li>Sistema descentralizado en blockchain</li>
+              </ul>
             </div>
-          )}
-
-        </div>
-
-         <RegisterSection account={account} />
-
-        {/* 🧩 SECCIÓN PRODUCTOR – Crear producto */}
-        <section style={{ border: "1px solid #ddd", padding: "1rem", marginTop: "1rem" }}>
-          <h2>Crear producto (Productor)</h2>
-
-          {producerError && (
-            <p style={{ color: "red" }}>
-              {producerError}
-            </p>
-          )}
-
-          <div style={{ marginBottom: "0.5rem" }}>
-            <label>
-              Nombre del producto:
-              <input
-                type="text"
-                value={producerName}
-                onChange={(e) => setProducerName(e.target.value)}
-                style={{ marginLeft: "0.5rem" }}
-              />
-            </label>
           </div>
+        )}
 
-          <div style={{ marginBottom: "0.5rem" }}>
-            <label>
-              Cantidad (supply):
-              <input
-                type="number"
-                min="1"
-                value={producerSupply}
-                onChange={(e) => setProducerSupply(e.target.value)}
-                style={{ marginLeft: "0.5rem" }}
-              />
-            </label>
+        {/* Error global */}
+        {error && (
+          <div
+            style={{
+              marginTop: "16px",
+              padding: "12px",
+              backgroundColor: "#fee2e2",
+              borderRadius: "8px",
+              fontSize: "13px",
+              color: "#991b1b",
+              border: "1px solid #fecaca",
+            }}
+          >
+            ⚠️ {error}
           </div>
-
-          <div style={{ marginBottom: "0.5rem" }}>
-            <label>
-              Descripción del producto:
-              <textarea
-                value={producerFeatures}
-                onChange={(e) => setProducerFeatures(e.target.value)}
-                style={{ display: "block", width: "100%", marginTop: "0.25rem" }}
-              />
-            </label>
-          </div>
-
-          <button onClick={createProduct} disabled={producerLoading}>
-            {producerLoading ? "Creando producto..." : "Crear producto"}
-          </button>
-        </section>
-        {/* 🧾 INVENTARIO DEL USUARIO */}
-        <section style={{ border: "1px solid #ddd", padding: "1rem", marginTop: "1rem" }}>
-          <h2>Mis productos</h2>
-
-          {loadingTokens && (
-            <p style={{ color: "#4b5563" }}>Cargando productos...</p>
-          )}
-
-          {tokensError && (
-            <p style={{ color: "red" }}>{tokensError}</p>
-          )}
-
-          {!loadingTokens && !tokensError && myTokens.length === 0 && (
-            <p style={{ color: "#6b7280" }}>
-              Todavía no tienes productos creados en este usuario.
-            </p>
-          )}
-
-          {!loadingTokens && !tokensError && myTokens.length > 0 && (
-            <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "0.5rem" }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "0.5rem" }}>ID</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "0.5rem" }}>Nombre</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "0.5rem" }}>Descripción</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "0.5rem" }}>Cantidad</th>
-                </tr>
-              </thead>
-              <tbody>
-                {myTokens.map((t) => (
-                  <tr key={t.id}>
-                    <td style={{ padding: "0.5rem", borderBottom: "1px solid #f3f4f6" }}>{t.id}</td>
-                    <td style={{ padding: "0.5rem", borderBottom: "1px solid #f3f4f6" }}>{t.name}</td>
-                    <td style={{ padding: "0.5rem", borderBottom: "1px solid #f3f4f6" }}>{t.features}</td>
-                    <td style={{ padding: "0.5rem", borderBottom: "1px solid #f3f4f6" }}>{t.balance}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-
+        )}
       </div>
     </div>
   );

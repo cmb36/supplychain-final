@@ -15,6 +15,14 @@ export const CONTRACT_ABI = [
   {
     "anonymous": false,
     "inputs": [
+      { "indexed": true, "internalType": "address", "name": "newAdmin", "type": "address" }
+    ],
+    "name": "AdminClaimed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
       { "indexed": true, "internalType": "uint256", "name": "tokenId", "type": "uint256" },
       { "indexed": true, "internalType": "address", "name": "consumer", "type": "address" },
       { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }
@@ -122,6 +130,20 @@ export const CONTRACT_ABI = [
     "name": "admin",
     "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "hasAdmin",
+    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "claimAdmin",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {

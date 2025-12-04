@@ -32,6 +32,7 @@ contract SupplyChain {
     }
 
     address public admin;
+    bool public hasAdmin;
     uint256 private _userCount;
     uint256 private _tokenCount;
     uint256 private _transferCount;
@@ -44,6 +45,7 @@ contract SupplyChain {
     event UserRequested(uint256 indexed userId, address indexed wallet, Role requestedRole);
     event UserApproved(uint256 indexed userId, Role role);
     event UserRejected(uint256 indexed userId);
+    event AdminClaimed(address indexed newAdmin);
 
     event TokenCreated(uint256 indexed tokenId, string name, uint256 parentId, address indexed owner, uint256 amount);
     event TransferCreated(uint256 indexed transferId, uint256 indexed tokenId, address indexed from, address to, uint256 amount);
@@ -90,7 +92,32 @@ contract SupplyChain {
         return Role.None;
     }
 
-    constructor() { admin = msg.sender; }
+    constructor() { 
+        admin = address(0);
+        hasAdmin = false;
+    }
+
+    function claimAdmin() external {
+        require(!hasAdmin, "Admin already exists");
+        require(addressToUserId[msg.sender] == 0, "User already registered");
+        
+        admin = msg.sender;
+        hasAdmin = true;
+        
+        _userCount++;
+        uint256 userId = _userCount;
+        
+        users[userId] = User({
+            id: userId,
+            wallet: msg.sender,
+            role: Role.None,
+            status: UserStatus.Approved
+        });
+        
+        addressToUserId[msg.sender] = userId;
+        
+        emit AdminClaimed(msg.sender);
+    }
 
 
     function approveUser(uint256 userId, Role role) external onlyAdmin {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getContract } from "../contract";
+import { useWeb3 } from "../contexts/Web3Context";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/Card";
 import Button from "./ui/Button";
 import Badge from "./ui/Badge";
@@ -12,19 +12,19 @@ const ROLE_LABELS = {
 };
 
 const TransfersPanel = ({ account, user }) => {
+  const { contract } = useWeb3();
   const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const loadTransfers = async () => {
-    if (!account) return;
+    if (!account || !contract) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const { contract } = await getContract();
       
       // Obtener eventos de transferencias
       const filter = contract.filters.TransferCreated();
@@ -73,18 +73,19 @@ const TransfersPanel = ({ account, user }) => {
   };
 
   useEffect(() => {
-    if (account && user) {
+    if (account && contract && user) {
       loadTransfers();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, user]);
+  }, [account, contract, user]);
 
   const handleAccept = async (transferId) => {
+    if (!contract) return;
+    
     setActionLoading(true);
     setError(null);
 
     try {
-      const { contract } = await getContract();
       const tx = await contract.acceptTransfer(transferId);
       await tx.wait();
       
@@ -98,11 +99,12 @@ const TransfersPanel = ({ account, user }) => {
   };
 
   const handleReject = async (transferId) => {
+    if (!contract) return;
+    
     setActionLoading(true);
     setError(null);
 
-    try {
-      const { contract } = await getContract();
+    try{
       const tx = await contract.rejectTransfer(transferId);
       await tx.wait();
       

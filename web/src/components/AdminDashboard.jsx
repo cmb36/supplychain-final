@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getContract } from "../contract";
+import { useWeb3 } from "../contexts/Web3Context";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "./ui/Card";
 import Button from "./ui/Button";
 import Badge from "./ui/Badge";
@@ -14,6 +14,7 @@ const ROLE_LABELS = {
 };
 
 const AdminDashboard = ({ account, adminAddress }) => {
+  const { contract } = useWeb3();
   const [adminError, setAdminError] = useState(null);
   const [pendingUsers, setPendingUsers] = useState([]);
   const [approvedUsers, setApprovedUsers] = useState([]);
@@ -22,11 +23,12 @@ const AdminDashboard = ({ account, adminAddress }) => {
 
   // Cargar usuarios pendientes y aprobados
   const loadUsers = async () => {
+    if (!contract) return;
+    
     setLoading(true);
     setAdminError(null);
     
     try {
-      const { contract } = await getContract();
       
       // Obtener eventos UserRequested para encontrar usuarios
       const filter = contract.filters.UserRequested();
@@ -79,19 +81,20 @@ const AdminDashboard = ({ account, adminAddress }) => {
 
   // Cargar usuarios al montar el componente
   useEffect(() => {
-    if (account && adminAddress) {
+    if (account && contract) {
       loadUsers();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, adminAddress]);
+  }, [account, contract]);
 
   // Aprobar usuario
   const handleApprove = async (userId, address) => {
+    if (!contract) return;
+    
     setActionLoading(true);
     setAdminError(null);
     
     try {
-      const { contract } = await getContract();
       
       // Obtener el rol solicitado del usuario
       const userData = await contract.getUserByAddress(address);
@@ -112,11 +115,12 @@ const AdminDashboard = ({ account, adminAddress }) => {
 
   // Rechazar usuario
   const handleReject = async (userId) => {
+    if (!contract) return;
+    
     setActionLoading(true);
     setAdminError(null);
     
     try {
-      const { contract } = await getContract();
       const tx = await contract.rejectUser(userId);
       await tx.wait();
       
@@ -132,11 +136,12 @@ const AdminDashboard = ({ account, adminAddress }) => {
 
   // Desactivar usuario
   const handleDeactivate = async (userId) => {
+    if (!contract) return;
+    
     setActionLoading(true);
     setAdminError(null);
     
     try {
-      const { contract } = await getContract();
       const tx = await contract.deactivateUser(userId);
       await tx.wait();
       

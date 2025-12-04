@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getContract } from "../contract";
+import { useWeb3 } from "../contexts/Web3Context";
 import RegisterSection from "../RegisterSection";
 import TransfersPanel from "./TransfersPanel";
 import Button from "./ui/Button";
@@ -35,7 +35,13 @@ const ROLE_ICONS = {
   5: "👑", // Admin
 };
 
-const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loadingTokens, tokensError, onReloadTokens, hasAdmin }) => {
+const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) => {
+  const { contract } = useWeb3();
+  
+  // Estados para productos
+  const [myTokens, setMyTokens] = useState([]);
+  const [loadingTokens, setLoadingTokens] = useState(false);
+  const [tokensError, setTokensError] = useState(null);
   const [producerName, setProducerName] = useState("");
   const [producerSupply, setProducerSupply] = useState("");
   const [producerFeatures, setProducerFeatures] = useState("");
@@ -52,12 +58,65 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
   const [transferSuccess, setTransferSuccess] = useState(null);
   const [availableRecipients, setAvailableRecipients] = useState([]);
 
+  // Estado para modal de crear producto
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
   const roleLabel = user ? ROLE_LABELS[Number(user.role)] : "Sin rol";
   const statusLabel = user ? STATUS_LABELS[Number(user.status)] : "Sin estado";
   const roleIcon = user ? ROLE_ICONS[Number(user.role)] || "👤" : "👤";
 
+  // Cargar productos del usuario
+  const loadMyProducts = async () => {
+    if (!account || !contract) {
+      setMyTokens([]);
+      return;
+    }
+
+    try {
+      setLoadingTokens(true);
+      setTokensError(null);
+
+      const ids = await contract.getUserTokens(account);
+      const tokens = [];
+
+      for (const idBig of ids) {
+        const id = Number(idBig);
+        if (!id) continue;
+
+        const [tokenId, name, features, parentId] = await contract.getTokenInfo(id);
+        const balance = await contract.getTokenBalance(id, account);
+
+        tokens.push({
+          id: Number(tokenId),
+          name,
+          features,
+          parentId: Number(parentId),
+          balance: Number(balance),
+        });
+      }
+
+      setMyTokens(tokens);
+    } catch (err) {
+      if (err?.message?.includes("No user")) {
+        setMyTokens([]);
+        return;
+      }
+      console.error("Error al cargar productos:", err);
+      setTokensError("No se pudieron cargar tus productos.");
+    } finally {
+      setLoadingTokens(false);
+    }
+  };
+
+  useEffect(() => {
+    if (account && contract && user) {
+      loadMyProducts();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, contract, user]);
+
   const createProduct = async () => {
-    if (!account) {
+    if (!account || !contract) {
       setProducerError("Primero conecta tu wallet.");
       return;
     }
@@ -67,14 +126,14 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
       setProducerSuccess(null);
       setProducerLoading(true);
 
-      const { contract } = await getContract();
-
       if (!producerName.trim()) {
         setProducerError("El nombre del producto es obligatorio.");
+        setProducerLoading(false);
         return;
       }
       if (!producerSupply || Number(producerSupply) <= 0) {
         setProducerError("La cantidad (supply) debe ser mayor a 0.");
+        setProducerLoading(false);
         return;
       }
 
@@ -93,14 +152,18 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
       setProducerSuccess(`Producto "${producerName}" creado exitosamente!`);
       
       // Recargar inventario
-      if (onReloadTokens) {
-        await onReloadTokens();
-      }
+      await loadMyProducts();
 
-      // Limpiar formulario
+      // Limpiar formulario y cerrar modal
       setProducerName("");
       setProducerSupply("");
       setProducerFeatures("");
+      
+      // Cerrar modal después de un pequeño delay
+      setTimeout(() => {
+        setShowCreateModal(false);
+        setProducerSuccess(null);
+      }, 2000);
     } catch (err) {
       console.error("Error al crear producto:", err);
       if (err.code === "ACTION_REJECTED" || err.code === 4001) {
@@ -111,6 +174,15 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
     } finally {
       setProducerLoading(false);
     }
+  };
+
+  const closeCreateModal = () => {
+    setShowCreateModal(false);
+    setProducerName("");
+    setProducerSupply("");
+    setProducerFeatures("");
+    setProducerError(null);
+    setProducerSuccess(null);
   };
 
   const isApproved = user && Number(user.status) === 2;
@@ -140,7 +212,7 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
           return;
         }
 
-        const { contract } = await getContract();
+        if (!contract) return;
         
         // Obtener todos los eventos UserRequested para encontrar usuarios
         const filter = contract.filters.UserRequested();
@@ -191,7 +263,7 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
 
   // Iniciar transferencia
   const startTransfer = async () => {
-    if (!transferRecipient || !transferAmount || !transferTokenId) {
+    if (!contract || !transferRecipient || !transferAmount || !transferTokenId) {
       setTransferError("Completa todos los campos.");
       return;
     }
@@ -207,8 +279,6 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
     setTransferSuccess(null);
 
     try {
-      const { contract } = await getContract();
-      
       const tx = await contract.transfer(transferRecipient, transferTokenId, amountNum);
       await tx.wait();
       
@@ -220,9 +290,7 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
       setTransferAmount("");
       
       // Recargar productos
-      if (onReloadTokens) {
-        await onReloadTokens();
-      }
+      await loadMyProducts();
     } catch (error) {
       console.error('Error en transferencia:', error);
       if (error.code === "ACTION_REJECTED" || error.code === 4001) {
@@ -257,252 +325,45 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
 
   return (
     <div>
-      {/* Tarjeta de Información del Usuario */}
-      <div
-        style={{
-          marginTop: "16px",
-          backgroundColor: "#f9fafb",
-          borderRadius: "12px",
-          padding: "24px 28px",
-          border: "1px solid #e5e7eb",
-          maxWidth: "700px",
-          marginLeft: "auto",
-          marginRight: "auto",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span style={{ fontSize: "32px" }}>{roleIcon}</span>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: "22px",
-                color: "#111827",
-              }}
-            >
-              Mi Usuario
-            </h2>
-          </div>
-          {account && (
-            <Button
-              onClick={onReloadUser}
-              disabled={loadingUser}
-              variant="secondary"
-              size="sm"
-            >
-              {loadingUser ? "⏳ Recargando..." : "🔄 Recargar"}
-            </Button>
-          )}
-        </div>
-
-        {loadingUser ? (
-          <p style={{ color: "#6b7280" }}>Cargando información del usuario...</p>
-        ) : user ? (
-          <>
+      {/* Mensajes de estado (solo si hay user) */}
+      {user && (
+        <>
+          {isPending && (
             <div
               style={{
-                backgroundColor: isApproved ? "#dcfce7" : isPending ? "#fef3c7" : "#fee2e2",
-                padding: "20px",
-                borderRadius: "10px",
-                marginBottom: "16px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "20px",
-                flexWrap: "wrap",
+                padding: "14px 20px",
+                backgroundColor: "#fffbeb",
+                borderLeft: "4px solid #f59e0b",
+                borderRadius: "8px",
+                fontSize: "14px",
+                color: "#92400e",
+                marginBottom: "20px",
               }}
             >
-              <div style={{ textAlign: "center" }}>
-                <p style={{ margin: 0, fontSize: "12px", color: "#6b7280", marginBottom: "8px" }}>Rol</p>
-                <Badge variant="info" style={{ fontSize: "14px", padding: "6px 16px" }}>
-                  {roleIcon} {roleLabel}
-                </Badge>
-              </div>
-              <div style={{ textAlign: "center" }}>
-                <p style={{ margin: 0, fontSize: "12px", color: "#6b7280", marginBottom: "8px" }}>Estado</p>
-                <Badge 
-                  variant={isApproved ? "success" : isPending ? "warning" : "error"}
-                  style={{ fontSize: "14px", padding: "6px 16px" }}
-                >
-                  {isApproved ? "✅" : isPending ? "⏳" : "❌"} {statusLabel}
-                </Badge>
-              </div>
+              ⏳ Tu solicitud está pendiente. El administrador debe aprobarla para que puedas usar el sistema.
             </div>
+          )}
 
-            {isPending && (
-              <div
-                style={{
-                  padding: "12px",
-                  backgroundColor: "#fffbeb",
-                  borderLeft: "4px solid #f59e0b",
-                  borderRadius: "4px",
-                  fontSize: "14px",
-                  color: "#92400e",
-                }}
-              >
-                ⏳ Tu solicitud está pendiente. El administrador debe aprobarla para que puedas usar el sistema.
-              </div>
-            )}
-
-            {isRejected && (
-              <div
-                style={{
-                  padding: "12px",
-                  backgroundColor: "#fef2f2",
-                  borderLeft: "4px solid #dc2626",
-                  borderRadius: "4px",
-                  fontSize: "14px",
-                  color: "#991b1b",
-                }}
-              >
-                ❌ Tu solicitud fue rechazada por el administrador. Contacta al soporte si crees que es un error.
-              </div>
-            )}
-
-            {isApproved && (
-              <div
-                style={{
-                  padding: "12px",
-                  backgroundColor: "#f0fdf4",
-                  borderLeft: "4px solid #16a34a",
-                  borderRadius: "4px",
-                  fontSize: "14px",
-                  color: "#166534",
-                }}
-              >
-                ✅ ¡Tu cuenta está aprobada! Puedes usar todas las funcionalidades del sistema.
-              </div>
-            )}
-          </>
-        ) : account ? (
-          <div
-            style={{
-              backgroundColor: "#fef3c7",
-              padding: "16px",
-              borderRadius: "8px",
-            }}
-          >
-            <p style={{ color: "#92400e", margin: 0, fontSize: "14px", fontWeight: "500" }}>
-              ℹ️ Esta cuenta no está registrada en el sistema. Usa el formulario de abajo para solicitar un rol.
-            </p>
-          </div>
-        ) : (
-          <p style={{ color: "#6b7280" }}>Conecta tu wallet para ver tu información de usuario.</p>
-        )}
-      </div>
+          {isRejected && (
+            <div
+              style={{
+                padding: "14px 20px",
+                backgroundColor: "#fef2f2",
+                borderLeft: "4px solid #dc2626",
+                borderRadius: "8px",
+                fontSize: "14px",
+                color: "#991b1b",
+                marginBottom: "20px",
+              }}
+            >
+              ❌ Tu solicitud fue rechazada por el administrador. Contacta al soporte si crees que es un error.
+            </div>
+          )}
+        </>
+      )}
 
       {/* Formulario de Registro (solo si no tiene usuario) */}
       {account && !user && <RegisterSection account={account} hasAdmin={hasAdmin} onRegisterSuccess={onReloadUser} />}
-
-      {/* Panel de Productor - Crear Productos */}
-      {isApproved && isProducer && (
-        <div
-          style={{
-            marginTop: "16px",
-            backgroundColor: "#f0fdf4",
-            borderRadius: "12px",
-            padding: "24px 28px",
-            border: "2px solid #16a34a",
-            maxWidth: "700px",
-            marginLeft: "auto",
-            marginRight: "auto",
-          }}
-        >
-          <h3 style={{ marginTop: 0, marginBottom: "12px", fontSize: "20px", color: "#166534" }}>
-            🌾 Crear Producto (Productor)
-          </h3>
-
-          <p style={{ fontSize: "14px", color: "#15803d", marginBottom: "16px" }}>
-            Como productor, puedes crear materias primas que serán el inicio de la cadena de suministro.
-          </p>
-
-          <div style={{ backgroundColor: "white", padding: "16px", borderRadius: "8px" }}>
-            <div style={{ marginBottom: "16px" }}>
-              <Label htmlFor="product-name" required>
-                Nombre del producto
-              </Label>
-              <Input
-                id="product-name"
-                type="text"
-                value={producerName}
-                onChange={(e) => setProducerName(e.target.value)}
-                placeholder="Ej: Leche fresca, Trigo orgánico"
-                disabled={producerLoading}
-              />
-            </div>
-
-            <div style={{ marginBottom: "16px" }}>
-              <Label htmlFor="product-supply" required>
-                Cantidad (supply)
-              </Label>
-              <Input
-                id="product-supply"
-                type="number"
-                min="1"
-                value={producerSupply}
-                onChange={(e) => setProducerSupply(e.target.value)}
-                placeholder="Ej: 1000"
-                disabled={producerLoading}
-              />
-            </div>
-
-            <div style={{ marginBottom: "20px" }}>
-              <Label htmlFor="product-description">
-                Descripción del producto
-              </Label>
-              <Textarea
-                id="product-description"
-                value={producerFeatures}
-                onChange={(e) => setProducerFeatures(e.target.value)}
-                placeholder="Ej: Leche orgánica certificada, origen: granja Los Pinos"
-                disabled={producerLoading}
-                rows={3}
-              />
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "center" }}>
-              <Button
-                onClick={createProduct}
-                disabled={producerLoading}
-                variant="success"
-                size="lg"
-              >
-                {producerLoading ? "⏳ Creando producto..." : "✨ Crear Producto"}
-              </Button>
-            </div>
-
-            {producerSuccess && (
-              <div
-                style={{
-                  marginTop: "12px",
-                  padding: "12px",
-                  backgroundColor: "#dcfce7",
-                  borderRadius: "6px",
-                  fontSize: "13px",
-                  color: "#166534",
-                }}
-              >
-                {producerSuccess}
-              </div>
-            )}
-
-            {producerError && (
-              <div
-                style={{
-                  marginTop: "12px",
-                  padding: "12px",
-                  backgroundColor: "#fee2e2",
-                  borderRadius: "6px",
-                  fontSize: "13px",
-                  color: "#991b1b",
-                }}
-              >
-                {producerError}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Inventario de Productos */}
       {isApproved && (
@@ -515,18 +376,29 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
             border: "1px solid #e5e7eb",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
             <h3 style={{ margin: 0, fontSize: "20px", color: "#111827" }}>📦 Mis Productos</h3>
-            {account && (
-              <Button
-                onClick={onReloadTokens}
-                disabled={loadingTokens}
-                variant="secondary"
-                size="sm"
-              >
-                {loadingTokens ? "⏳ Recargando..." : "🔄 Recargar"}
-              </Button>
-            )}
+            <div style={{ display: "flex", gap: "8px" }}>
+              {isProducer && (
+                <Button
+                  onClick={() => setShowCreateModal(true)}
+                  variant="success"
+                  size="sm"
+                >
+                  ✨ Crear Producto
+                </Button>
+              )}
+              {account && (
+                <Button
+                  onClick={loadMyProducts}
+                  disabled={loadingTokens}
+                  variant="secondary"
+                  size="sm"
+                >
+                  {loadingTokens ? "⏳" : "🔄"}
+                </Button>
+              )}
+            </div>
           </div>
 
           {loadingTokens && <p style={{ color: "#6b7280" }}>Cargando productos...</p>}
@@ -681,6 +553,146 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, myTokens, loa
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal de Crear Producto */}
+      {showCreateModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "20px",
+          }}
+          onClick={closeCreateModal}
+        >
+          <Card
+            style={{
+              maxWidth: "550px",
+              width: "100%",
+              margin: 0,
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CardHeader>
+              <CardTitle>🌾 Crear Nuevo Producto</CardTitle>
+              <CardDescription>
+                Como productor, creas materias primas que inician la cadena de suministro
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div style={{ marginBottom: "16px" }}>
+                <Label htmlFor="product-name" required>
+                  Nombre del producto
+                </Label>
+                <Input
+                  id="product-name"
+                  type="text"
+                  value={producerName}
+                  onChange={(e) => setProducerName(e.target.value)}
+                  placeholder="Ej: Leche fresca, Trigo orgánico"
+                  disabled={producerLoading}
+                />
+              </div>
+
+              <div style={{ marginBottom: "16px" }}>
+                <Label htmlFor="product-supply" required>
+                  Cantidad (supply)
+                </Label>
+                <Input
+                  id="product-supply"
+                  type="number"
+                  min="1"
+                  value={producerSupply}
+                  onChange={(e) => setProducerSupply(e.target.value)}
+                  placeholder="Ej: 1000"
+                  disabled={producerLoading}
+                />
+              </div>
+
+              <div style={{ marginBottom: "20px" }}>
+                <Label htmlFor="product-description">
+                  Descripción del producto
+                </Label>
+                <Textarea
+                  id="product-description"
+                  value={producerFeatures}
+                  onChange={(e) => setProducerFeatures(e.target.value)}
+                  placeholder="Ej: Leche orgánica certificada, origen: granja Los Pinos"
+                  disabled={producerLoading}
+                  rows={3}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "8px" }}>
+                <Button
+                  onClick={createProduct}
+                  disabled={producerLoading}
+                  variant="success"
+                  style={{ flex: 1 }}
+                >
+                  {producerLoading ? "⏳ Creando..." : "✨ Crear Producto"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={closeCreateModal}
+                  disabled={producerLoading}
+                >
+                  Cancelar
+                </Button>
+              </div>
+
+              {producerSuccess && (
+                <div
+                  style={{
+                    marginTop: "16px",
+                    padding: "12px 16px",
+                    backgroundColor: "#dcfce7",
+                    borderRadius: "8px",
+                    border: "1px solid #bbf7d0",
+                    fontSize: "13px",
+                    color: "#166534",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <span>✅</span>
+                  <span>{producerSuccess}</span>
+                </div>
+              )}
+
+              {producerError && (
+                <div
+                  style={{
+                    marginTop: "16px",
+                    padding: "12px 16px",
+                    backgroundColor: "#fee2e2",
+                    borderRadius: "8px",
+                    border: "1px solid #fecaca",
+                    fontSize: "13px",
+                    color: "#991b1b",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <span>⚠️</span>
+                  <span>{producerError}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
 

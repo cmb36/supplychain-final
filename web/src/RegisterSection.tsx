@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getContract } from "./contract";
+import { useWeb3 } from "./contexts/Web3Context";
 import Button from "./components/ui/Button";
 import Select from "./components/ui/Select";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "./components/ui/Card";
@@ -11,6 +11,7 @@ interface RegisterSectionProps {
 }
 
 const RegisterSection: React.FC<RegisterSectionProps> = ({ account, hasAdmin, onRegisterSuccess }) => {
+  const { contract } = useWeb3();
   const [role, setRole] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +29,7 @@ const RegisterSection: React.FC<RegisterSectionProps> = ({ account, hasAdmin, on
   }, [account, previousAccount]);
 
   const handleRegister = async () => {
-    if (!account) {
+    if (!account || !contract) {
       alert("Primero conecta tu wallet.");
       return;
     }
@@ -42,8 +43,6 @@ const RegisterSection: React.FC<RegisterSectionProps> = ({ account, hasAdmin, on
       setLoading(true);
       setError(null);
       setSuccess(false);
-
-      const { contract } = await getContract();
 
       // Si el rol es 5 (Admin), llamar a claimAdmin()
       if (role === 5) {

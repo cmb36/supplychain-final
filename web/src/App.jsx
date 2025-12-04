@@ -1,309 +1,11 @@
-import { useState, useEffect } from "react";
 import "./App.css";
-import { getContract } from "./contract";
+import { useWeb3 } from "./contexts/Web3Context";
 import Header from "./components/Header";
 import AdminDashboard from "./components/AdminDashboard";
 import UserDashboard from "./components/UserDashboard";
 
 function App() {
-  // ESTADOS BÁSICOS
-  const [account, setAccount] = useState(null);
-  const [user, setUser] = useState(null);
-  const [loadingUser, setLoadingUser] = useState(false);
-  const [error, setError] = useState(null);
-
-  // ESTADO PARA ADMIN
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminAddress, setAdminAddress] = useState(null);
-  const [hasAdmin, setHasAdmin] = useState(true); // Por defecto true hasta verificar
-
-  // INVENTARIO DEL USUARIO (productos / tokens)
-  const [myTokens, setMyTokens] = useState([]);
-  const [loadingTokens, setLoadingTokens] = useState(false);
-  const [tokensError, setTokensError] = useState(null);
-
-  // Flag para evitar reconexión automática después de desconectar
-  const [manualDisconnect, setManualDisconnect] = useState(false);
-
-  // 1) Conectar wallet
-  const connectWallet = async () => {
-    try {
-      if (!window.ethereum) {
-        alert("Instala MetaMask para continuar");
-        return;
-      }
-
-      const accounts = await window.ethereum.request({
-        method: "eth_requestAccounts",
-      });
-
-      if (!accounts || accounts.length === 0) {
-        alert("No se encontraron cuentas en MetaMask");
-        return;
-      }
-
-      const selected = accounts[0];
-      setAccount(selected);
-      setManualDisconnect(false); // Reset flag al conectar
-
-      // IMPORTANTE: Cargar info del admin PRIMERO para detectar correctamente si es admin
-      await loadAdminInfo(selected);
-      // Luego cargar datos del usuario
-      await loadUser(null, selected);
-      await loadMyProducts(null, selected);
-    } catch (err) {
-      console.error("Error al conectar wallet:", err);
-      alert("No se pudo conectar la wallet. Revisa MetaMask.");
-    }
-  };
-
-  // 1-bis) Desconectar wallet completamente
-  const disconnectWallet = async () => {
-    // Marcar como desconexión manual para evitar reconexión automática
-    setManualDisconnect(true);
-
-    // Limpiar estados de la aplicación
-    setAccount(null);
-    setUser(null);
-    setIsAdmin(false);
-    setAdminAddress(null);
-    setHasAdmin(true);
-    setMyTokens([]);
-    setError(null);
-    setTokensError(null);
-
-    // Revocar permisos de MetaMask
-    try {
-      if (window.ethereum) {
-        await window.ethereum.request({
-          method: 'wallet_revokePermissions',
-          params: [{ eth_accounts: {} }],
-        });
-      }
-    } catch (error) {
-      console.warn('Error revoking MetaMask permissions:', error);
-      // Continuar con la desconexión aunque falle la revocación
-    }
-
-    // Limpiar todos los almacenamientos
-    localStorage.clear();
-    sessionStorage.clear();
-
-    // Recargar la página para asegurar un estado completamente limpio
-    window.location.reload();
-  };
-
-  // 1-ter) Cargar información del admin y comprobar si la cuenta conectada es el admin
-  const loadAdminInfo = async (providedAccount = null) => {
-    try {
-      const addr = providedAccount || account;
-      if (!addr) return;
-
-      const { contract } = await getContract();
-      const adminAddr = await contract.admin();
-      const hasAdminValue = await contract.hasAdmin();
-
-      setAdminAddress(adminAddr);
-      setHasAdmin(hasAdminValue);
-      
-      // Verificar si la cuenta actual es admin de dos formas:
-      // 1. Por dirección (comparar con contract.admin())
-      // 2. Por rol del usuario (si tiene role = 5 = Admin)
-      if (adminAddr && adminAddr !== '0x0000000000000000000000000000000000000000') {
-        const isAdminByAddress = adminAddr.toLowerCase() === addr.toLowerCase();
-        
-        // También verificar el rol del usuario
-        try {
-          const userData = await contract.getUserByAddress(addr);
-          const userRole = Number(userData.role);
-          const isAdminByRole = userRole === 5; // Role.Admin = 5
-          
-          // Es admin si cumple cualquiera de las dos condiciones
-          setIsAdmin(isAdminByAddress || isAdminByRole);
-        } catch {
-          // Si falla getUserByAddress, solo usar comparación de dirección
-          setIsAdmin(isAdminByAddress);
-        }
-      } else {
-        setIsAdmin(false);
-      }
-    } catch (err) {
-      console.error("Error al cargar admin:", err);
-      setHasAdmin(false);
-      setIsAdmin(false);
-    }
-  };
-
-  // 2) Cargar info de usuario desde el contrato
-  const loadUser = async (existingContract = null, providedAccount = null) => {
-    try {
-      setLoadingUser(true);
-      setError(null);
-
-      const addr = providedAccount || account;
-      if (!addr) {
-        setUser(null);
-        setLoadingUser(false);
-        return;
-      }
-
-      const { contract } = existingContract
-        ? { contract: existingContract }
-        : await getContract();
-
-      const userData = await contract.getUserByAddress(addr);
-
-      // ethers v6 devuelve BigInt → comparamos con 0n
-      if (userData.id === 0n) {
-        setUser(null);
-      } else {
-        setUser(userData);
-      }
-    } catch (err) {
-      console.error("Error al cargar usuario:", err);
-      // No mostrar error si simplemente no está registrado
-      if (!err?.message?.includes("No user")) {
-        setError("No se pudo cargar la información del usuario.");
-      } else {
-        setUser(null);
-      }
-    } finally {
-      setLoadingUser(false);
-    }
-  };
-
-  // 3) Cargar productos del usuario conectado (inventario básico)
-  const loadMyProducts = async (existingContract = null, providedAccount = null) => {
-    try {
-      setLoadingTokens(true);
-      setTokensError(null);
-
-      const addr = providedAccount || account;
-      if (!addr) {
-        setMyTokens([]);
-        setLoadingTokens(false);
-        return;
-      }
-
-      const { contract } = existingContract
-        ? { contract: existingContract }
-        : await getContract();
-
-      // Obtener IDs de tokens que pertenecen a este usuario
-      const ids = await contract.getUserTokens(addr);
-
-      const tokens = [];
-
-      for (const idBig of ids) {
-        const id = Number(idBig);
-        if (!id) continue;
-
-        const [tokenId, name, features, parentId] = await contract.getTokenInfo(id);
-        const balance = await contract.getTokenBalance(id, addr);
-
-        tokens.push({
-          id: Number(tokenId),
-          name,
-          features,
-          parentId: Number(parentId),
-          balance: Number(balance),
-        });
-      }
-
-      setMyTokens(tokens);
-    } catch (err) {
-      console.error("Error al cargar productos del usuario:", err);
-
-      // Si el contrato dice "No user", no ponemos error rojo; simplemente lista vacía
-      if (err?.message?.includes("No user")) {
-        setMyTokens([]);
-        return;
-      }
-
-      setTokensError("No se pudieron cargar tus productos.");
-    } finally {
-      setLoadingTokens(false);
-    }
-  };
-
-  // 4) Intentar detectar cuenta ya conectada al cargar la página
-  useEffect(() => {
-    const init = async () => {
-      try {
-        if (!window.ethereum) return;
-
-        const accounts = await window.ethereum.request({
-          method: "eth_accounts",
-        });
-
-        if (accounts && accounts.length > 0) {
-          const selected = accounts[0];
-          setAccount(selected);
-          // Cargar admin info primero
-          await loadAdminInfo(selected);
-          await loadUser(null, selected);
-          await loadMyProducts(null, selected);
-        }
-      } catch (err) {
-        console.error("Error en init useEffect:", err);
-      }
-    };
-
-    init();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // 5) Detectar cambios de cuenta en MetaMask
-  useEffect(() => {
-    if (!window.ethereum) return;
-
-    const handleAccountsChanged = async (accounts) => {
-      // Solo procesar si no es una desconexión manual
-      if (manualDisconnect) {
-        return;
-      }
-
-      if (accounts.length === 0) {
-        disconnectWallet();
-      } else {
-        const newAccount = accounts[0];
-        const currentAccountLower = account?.toLowerCase() ?? '';
-        const newAccountLower = newAccount.toLowerCase();
-
-        // Si la cuenta cambió o es la primera vez que se conecta
-        if (!account || currentAccountLower !== newAccountLower) {
-          setAccount(newAccount);
-          setManualDisconnect(false);
-          
-          // Cargar datos del usuario con la nueva cuenta
-          // IMPORTANTE: Cargar admin info primero
-          try {
-            await loadAdminInfo(newAccount);
-            await loadUser(null, newAccount);
-            await loadMyProducts(null, newAccount);
-          } catch (error) {
-            console.error('Error cargando datos:', error);
-          }
-        }
-      }
-    };
-
-    const handleChainChanged = () => {
-      window.location.reload();
-    };
-
-    window.ethereum.on("accountsChanged", handleAccountsChanged);
-    window.ethereum.on("chainChanged", handleChainChanged);
-
-    // Cleanup
-    return () => {
-      if (window.ethereum.removeListener) {
-        window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
-        window.ethereum.removeListener("chainChanged", handleChainChanged);
-      }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, manualDisconnect]);
+  const { account, isAdmin, user, hasAdmin, connectWallet, disconnectWallet, refreshUser } = useWeb3();
 
   return (
     <div
@@ -318,6 +20,8 @@ function App() {
       <Header
         account={account}
         isAdmin={isAdmin}
+        user={user}
+        loadingUser={false}
         onConnect={connectWallet}
         onDisconnect={disconnectWallet}
       />
@@ -331,22 +35,17 @@ function App() {
           padding: "32px 20px",
         }}
       >
-
         {/* Vista según si es Admin o Usuario Regular */}
         {account && (
           <>
             {isAdmin ? (
-              <AdminDashboard account={account} adminAddress={adminAddress} />
+              <AdminDashboard account={account} adminAddress={account} />
             ) : (
               <UserDashboard
                 account={account}
                 user={user}
-                loadingUser={loadingUser}
-                onReloadUser={() => loadUser(null, account)}
-                myTokens={myTokens}
-                loadingTokens={loadingTokens}
-                tokensError={tokensError}
-                onReloadTokens={() => loadMyProducts(null, account)}
+                loadingUser={false}
+                onReloadUser={refreshUser}
                 hasAdmin={hasAdmin}
               />
             )}
@@ -392,23 +91,6 @@ function App() {
                 <li>Sistema descentralizado en blockchain</li>
               </ul>
             </div>
-          </div>
-        )}
-
-        {/* Error global */}
-        {error && (
-          <div
-            style={{
-              marginTop: "16px",
-              padding: "12px",
-              backgroundColor: "#fee2e2",
-              borderRadius: "8px",
-              fontSize: "13px",
-              color: "#991b1b",
-              border: "1px solid #fecaca",
-            }}
-          >
-            ⚠️ {error}
           </div>
         )}
       </div>

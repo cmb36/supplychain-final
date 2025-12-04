@@ -1,10 +1,43 @@
 import Button from "./ui/Button";
+import Badge from "./ui/Badge";
 
-const Header = ({ account, isAdmin, onConnect, onDisconnect }) => {
+const ROLE_LABELS = {
+  0: "Sin rol",
+  1: "Productor",
+  2: "Fábrica",
+  3: "Retailer",
+  4: "Consumidor",
+  5: "Administrador",
+};
 
+const ROLE_ICONS = {
+  1: "🌾",
+  2: "🏭",
+  3: "🏪",
+  4: "🛒",
+  5: "👑",
+};
+
+const STATUS_LABELS = {
+  0: "Sin estado",
+  1: "Pendiente",
+  2: "Aprobado",
+  3: "Rechazado",
+  4: "Inactivo",
+};
+
+const Header = ({ account, isAdmin, user, loadingUser, onConnect, onDisconnect }) => {
   const formatAddress = (address) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
+
+  const userRole = user ? Number(user.role) : 0;
+  const userStatus = user ? Number(user.status) : 0;
+  const roleLabel = ROLE_LABELS[userRole] || "Sin rol";
+  const roleIcon = ROLE_ICONS[userRole] || "👤";
+  const statusLabel = STATUS_LABELS[userStatus] || "Sin estado";
+  const isApproved = userStatus === 2;
+  const isPending = userStatus === 1;
 
   return (
     <header
@@ -74,26 +107,20 @@ const Header = ({ account, isAdmin, onConnect, onDisconnect }) => {
           </div>
 
           {/* Acciones de la derecha */}
-          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-            {/* Badge de Admin */}
-            {account && isAdmin && (
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  padding: "6px 12px",
-                  borderRadius: "6px",
-                  fontSize: "13px",
-                  fontWeight: "600",
-                  backgroundColor: "#dbeafe",
-                  color: "#1e40af",
-                  border: "1px solid #93c5fd",
-                }}
-              >
-                <span>👑</span>
-                <span>Admin</span>
-              </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+            {/* Información del usuario */}
+            {account && user && !loadingUser && (
+              <>
+                {/* Badge de Rol */}
+                <Badge variant={isApproved ? "success" : isPending ? "warning" : "info"}>
+                  {roleIcon} {roleLabel}
+                </Badge>
+
+                {/* Badge de Estado */}
+                <Badge variant={isApproved ? "success" : isPending ? "warning" : "error"}>
+                  {isApproved ? "✅" : isPending ? "⏳" : "❌"} {statusLabel}
+                </Badge>
+              </>
             )}
 
             {/* Dirección de la cuenta */}

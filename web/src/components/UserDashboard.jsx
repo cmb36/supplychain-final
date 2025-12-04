@@ -274,6 +274,18 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
       return;
     }
 
+    // Validar balance antes de intentar la transferencia
+    const token = myTokens.find(t => t.id === transferTokenId);
+    if (!token) {
+      setTransferError("Token no encontrado.");
+      return;
+    }
+
+    if (amountNum > token.balance) {
+      setTransferError(`Balance insuficiente. Solo tienes ${token.balance} unidades disponibles.`);
+      return;
+    }
+
     setTransferLoading(true);
     setTransferError(null);
     setTransferSuccess(null);
@@ -284,19 +296,33 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
       
       setTransferSuccess("Transferencia enviada. El destinatario debe aceptarla.");
       
-      // Limpiar formulario
-      setTransferTokenId(null);
-      setTransferRecipient("");
-      setTransferAmount("");
-      
       // Recargar productos
       await loadMyProducts();
+      
+      // Cerrar modal después de un delay
+      setTimeout(() => {
+        setTransferTokenId(null);
+        setTransferRecipient("");
+        setTransferAmount("");
+        setTransferSuccess(null);
+      }, 2000);
     } catch (error) {
       console.error('Error en transferencia:', error);
+      
+      const errorMessage = error?.message || '';
+      
       if (error.code === "ACTION_REJECTED" || error.code === 4001) {
         setTransferError("Transacción cancelada en MetaMask.");
+      } else if (errorMessage.includes("Insufficient balance")) {
+        setTransferError("Balance insuficiente para esta transferencia.");
+      } else if (errorMessage.includes("Invalid next role") || errorMessage.includes("Invalid role")) {
+        setTransferError("No puedes transferir a este usuario. Verifica que tenga el rol correcto en la cadena de suministro.");
+      } else if (errorMessage.includes("Consumer cannot send")) {
+        setTransferError("Los consumidores no pueden enviar transferencias.");
+      } else if (errorMessage.includes("User not approved") || errorMessage.includes("Not approved")) {
+        setTransferError("El destinatario no está aprobado en el sistema.");
       } else {
-        setTransferError("Error al enviar transferencia. Revisa la consola.");
+        setTransferError("Error al enviar transferencia. Revisa la consola para más detalles.");
       }
     } finally {
       setTransferLoading(false);
@@ -310,7 +336,6 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
     setTransferAmount("");
     setTransferError(null);
     setTransferSuccess(null);
-    await loadRecipients(tokenId);
   };
 
   // Cerrar modal de transferencia
@@ -731,6 +756,28 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {/* Mostrar balance disponible */}
+              {myTokens.find(t => t.id === transferTokenId) && (
+                <div style={{ 
+                  marginBottom: "16px", 
+                  padding: "12px", 
+                  backgroundColor: "#f0f9ff", 
+                  borderRadius: "8px",
+                  border: "1px solid #bae6fd"
+                }}>
+                  <p style={{ margin: 0, fontSize: "13px", color: "#0c4a6e" }}>
+                    <strong>Balance disponible:</strong>{" "}
+                    <span style={{ fontSize: "16px", fontWeight: "700", color: "#0284c7" }}>
+                      {myTokens.find(t => t.id === transferTokenId).balance}
+                    </span>
+                    {" "}unidades
+                  </p>
+                  <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "#075985" }}>
+                    Producto: <strong>{myTokens.find(t => t.id === transferTokenId).name}</strong>
+                  </p>
+                </div>
+              )}
+
               <div style={{ marginBottom: "16px" }}>
                 <Label htmlFor="recipient" required>Destinatario</Label>
                 <Select
@@ -754,16 +801,20 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
               </div>
 
               <div style={{ marginBottom: "20px" }}>
-                <Label htmlFor="amount" required>Cantidad</Label>
+                <Label htmlFor="amount" required>Cantidad a transferir</Label>
                 <Input
                   id="amount"
                   type="number"
                   min="1"
+                  max={myTokens.find(t => t.id === transferTokenId)?.balance || 0}
                   value={transferAmount}
                   onChange={(e) => setTransferAmount(e.target.value)}
-                  placeholder="Cantidad a transferir"
+                  placeholder={`Máximo: ${myTokens.find(t => t.id === transferTokenId)?.balance || 0}`}
                   disabled={transferLoading}
                 />
+                <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "#6b7280" }}>
+                  Introduce la cantidad que deseas transferir (máximo: {myTokens.find(t => t.id === transferTokenId)?.balance || 0})
+                </p>
               </div>
 
               <div style={{ display: "flex", gap: "8px" }}>

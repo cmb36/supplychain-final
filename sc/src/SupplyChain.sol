@@ -2,9 +2,26 @@
 pragma solidity ^0.8.24;
 
 contract SupplyChain {
-    enum Role { None, Producer, Factory, Retailer, Consumer, Admin }
-    enum UserStatus { None, Pending, Approved, Rejected,Canceled }
-    enum TransferStatus { Pending, Accepted, Rejected }
+    enum Role {
+        None,
+        Producer,
+        Factory,
+        Retailer,
+        Consumer,
+        Admin
+    }
+    enum UserStatus {
+        None,
+        Pending,
+        Approved,
+        Rejected,
+        Canceled
+    }
+    enum TransferStatus {
+        Pending,
+        Accepted,
+        Rejected
+    }
 
     struct User {
         uint256 id;
@@ -18,6 +35,7 @@ contract SupplyChain {
         string name;
         string features;
         uint256 parentId;
+        address creator; // Quién creó originalmente este token
         mapping(address => uint256) balance;
     }
 
@@ -42,17 +60,37 @@ contract SupplyChain {
     mapping(uint256 => Token) private tokens;
     mapping(uint256 => Transfer) public transfers;
 
-    event UserRequested(uint256 indexed userId, address indexed wallet, Role requestedRole);
+    event UserRequested(
+        uint256 indexed userId,
+        address indexed wallet,
+        Role requestedRole
+    );
     event UserApproved(uint256 indexed userId, Role role);
     event UserRejected(uint256 indexed userId);
     event AdminClaimed(address indexed newAdmin);
 
-    event TokenCreated(uint256 indexed tokenId, string name, uint256 parentId, address indexed owner, uint256 amount);
-    event TransferCreated(uint256 indexed transferId, uint256 indexed tokenId, address indexed from, address to, uint256 amount);
+    event TokenCreated(
+        uint256 indexed tokenId,
+        string name,
+        uint256 parentId,
+        address indexed owner,
+        uint256 amount
+    );
+    event TransferCreated(
+        uint256 indexed transferId,
+        uint256 indexed tokenId,
+        address indexed from,
+        address to,
+        uint256 amount
+    );
     event TransferAccepted(uint256 indexed transferId);
     event TransferRejected(uint256 indexed transferId);
-    event TokenConsumed(uint256 indexed tokenId, address indexed consumer, uint256 amount);// New event for future use
-    event UserCanceled(uint256 indexed userId, address indexed wallet);// New event for future use
+    event TokenConsumed(
+        uint256 indexed tokenId,
+        address indexed consumer,
+        uint256 amount
+    ); // New event for future use
+    event UserCanceled(uint256 indexed userId, address indexed wallet); // New event for future use
 
     function requestUserRole(Role requestedRole) external {
         require(requestedRole != Role.None, "Invalid role");
@@ -73,7 +111,6 @@ contract SupplyChain {
         emit UserRequested(userId, msg.sender, requestedRole);
     }
 
-
     modifier onlyAdmin() {
         require(msg.sender == admin, "Not admin");
         _;
@@ -81,18 +118,22 @@ contract SupplyChain {
 
     modifier onlyApproved() {
         uint256 uid = addressToUserId[msg.sender];
-        require(uid != 0 && users[uid].status == UserStatus.Approved, "User not approved");
+        require(
+            uid != 0 && users[uid].status == UserStatus.Approved,
+            "User not approved"
+        );
         _;
     }
 
-    function _nextRoleFor(Role r) internal pure returns (Role) { // helper recomended for future use
+    function _nextRoleFor(Role r) internal pure returns (Role) {
+        // helper recomended for future use
         if (r == Role.Producer) return Role.Factory;
-        if (r == Role.Factory)  return Role.Retailer;
+        if (r == Role.Factory) return Role.Retailer;
         if (r == Role.Retailer) return Role.Consumer;
         return Role.None;
     }
 
-    constructor() { 
+    constructor() {
         admin = address(0);
         hasAdmin = false;
     }
@@ -100,25 +141,24 @@ contract SupplyChain {
     function claimAdmin() external {
         require(!hasAdmin, "Admin already exists");
         require(addressToUserId[msg.sender] == 0, "User already registered");
-        
+
         admin = msg.sender;
         hasAdmin = true;
-        
+
         _userCount++;
         uint256 userId = _userCount;
-        
+
         users[userId] = User({
             id: userId,
             wallet: msg.sender,
             role: Role.Admin,
             status: UserStatus.Approved
         });
-        
+
         addressToUserId[msg.sender] = userId;
-        
+
         emit AdminClaimed(msg.sender);
     }
-
 
     function approveUser(uint256 userId, Role role) external onlyAdmin {
         require(userId != 0 && userId <= _userCount, "Invalid user");
@@ -134,7 +174,8 @@ contract SupplyChain {
         emit UserRejected(userId);
     }
 
-    function cancelMyUser() external {//Soft delete user account
+    function cancelMyUser() external {
+        //Soft delete user account
         uint256 uid = addressToUserId[msg.sender];
         require(uid != 0, "No user");
         users[uid].status = UserStatus.Canceled;
@@ -142,33 +183,56 @@ contract SupplyChain {
         emit UserCanceled(uid, msg.sender);
     }
 
-    function deactivateUser(uint256 userId) external onlyAdmin { //Admin can cancel user account
+    function deactivateUser(uint256 userId) external onlyAdmin {
+        //Admin can cancel user account
         require(userId != 0 && userId <= _userCount, "Invalid user");
         users[userId].status = UserStatus.Canceled;
         users[userId].role = Role.None;
         emit UserCanceled(userId, users[userId].wallet);
     }
 
-
     function _requireRole(address who, Role r) internal view {
         uint256 uid = addressToUserId[who];
         require(uid != 0, "User missing");
         User memory u = users[uid];
-        require(u.status == UserStatus.Approved && u.role == r, "Role/Status mismatch");
+        require(
+            u.status == UserStatus.Approved && u.role == r,
+            "Role/Status mismatch"
+        );
     }
 
-    function createToken(string calldata name, string calldata features, uint256 parentId, uint256 amount)
-        external onlyApproved returns (uint256 tokenId)
-    {
+    function createToken(
+        string calldata name,
+        string calldata features,
+        uint256 parentId,
+        uint256 amount
+    ) external onlyApproved returns (uint256 tokenId) {
         require(bytes(name).length > 0, "Name required");
         require(amount > 0, "Amount > 0");
 
         uint256 uid = addressToUserId[msg.sender];
         Role role = users[uid].role;
+
         if (parentId == 0) {
+            // Productor crea materia prima (sin token padre)
             require(role == Role.Producer, "Only Producer for raw");
         } else {
+            // Fábrica crea producto derivado (con token padre)
             require(role == Role.Factory, "Only Factory for derived");
+
+            // Validar que el token padre existe
+            require(tokens[parentId].id != 0, "Parent token missing");
+
+            // Validar que la fábrica tiene suficiente balance del token padre
+            require(
+                tokens[parentId].balance[msg.sender] >= amount,
+                "Insufficient parent balance"
+            );
+
+            // IMPORTANTE: Descontar la cantidad utilizada del token padre
+            unchecked {
+                tokens[parentId].balance[msg.sender] -= amount;
+            }
         }
 
         _tokenCount++;
@@ -179,56 +243,42 @@ contract SupplyChain {
         t.name = name;
         t.features = features;
         t.parentId = parentId;
+        t.creator = msg.sender; // Guardar quién creó el token
         t.balance[msg.sender] = amount;
 
         emit TokenCreated(tokenId, name, parentId, msg.sender, amount);
     }
 
-    function createTransfer(uint256 tokenId, address to, uint256 amount) external onlyApproved returns (uint256 transferId) {
+    function createTransfer(
+        uint256 tokenId,
+        address to,
+        uint256 amount
+    ) external onlyApproved returns (uint256 transferId) {
         require(to != address(0), "to != 0");
         require(amount > 0, "amount > 0");
         require(tokens[tokenId].id != 0, "Token missing");
-        require(tokens[tokenId].balance[msg.sender] >= amount, "Insufficient balance");
+        require(
+            tokens[tokenId].balance[msg.sender] >= amount,
+            "Insufficient balance"
+        );
+
+        // IMPORTANTE: Solo puedes transferir tokens que TÚ creaste
+        require(tokens[tokenId].creator == msg.sender, "Not token creator");
 
         uint256 uidFrom = addressToUserId[msg.sender]; // Enforce linear pipeline: Producer->Factory->Retailer->Consumer
         Role fromRole = users[uidFrom].role;
 
         uint256 uidTo = addressToUserId[to];
         require(uidTo != 0, "Receiver must be a registered user");
-        require(users[uidTo].status == UserStatus.Approved, "Receiver not approved");
+        require(
+            users[uidTo].status == UserStatus.Approved,
+            "Receiver not approved"
+        );
         require(fromRole != Role.Consumer, "Consumer cannot send");
-        require(users[uidTo].role == _nextRoleFor(fromRole), "Invalid next role");
-
-
-        _transferCount++;
-        transferId = _transferCount;
-
-        transfers[transferId] = Transfer({
-            id: transferId, tokenId: tokenId, from: msg.sender, to: to,
-            amount: amount, status: TransferStatus.Pending, timestamp: block.timestamp
-        });
-
-        emit TransferCreated(transferId, tokenId, msg.sender, to, amount);
-    }
-
-        function transfer(address to, uint256 tokenId, uint256 amount)
-        external
-        onlyApproved
-        returns (uint256 transferId)
-    {
-        require(to != address(0), "to != 0");
-        require(amount > 0, "amount > 0");
-        require(tokens[tokenId].id != 0, "Token missing");
-        require(tokens[tokenId].balance[msg.sender] >= amount, "Insufficient balance");
-
-        uint256 uidFrom = addressToUserId[msg.sender];
-        Role fromRole = users[uidFrom].role;
-
-        uint256 uidTo = addressToUserId[to];
-        require(uidTo != 0, "Receiver must be a registered user");
-        require(users[uidTo].status == UserStatus.Approved, "Receiver not approved");
-        require(fromRole != Role.Consumer, "Consumer cannot send");
-        require(users[uidTo].role == _nextRoleFor(fromRole), "Invalid next role");
+        require(
+            users[uidTo].role == _nextRoleFor(fromRole),
+            "Invalid next role"
+        );
 
         _transferCount++;
         transferId = _transferCount;
@@ -246,6 +296,52 @@ contract SupplyChain {
         emit TransferCreated(transferId, tokenId, msg.sender, to, amount);
     }
 
+    function transfer(
+        address to,
+        uint256 tokenId,
+        uint256 amount
+    ) external onlyApproved returns (uint256 transferId) {
+        require(to != address(0), "to != 0");
+        require(amount > 0, "amount > 0");
+        require(tokens[tokenId].id != 0, "Token missing");
+        require(
+            tokens[tokenId].balance[msg.sender] >= amount,
+            "Insufficient balance"
+        );
+
+        // IMPORTANTE: Solo puedes transferir tokens que TÚ creaste
+        require(tokens[tokenId].creator == msg.sender, "Not token creator");
+
+        uint256 uidFrom = addressToUserId[msg.sender];
+        Role fromRole = users[uidFrom].role;
+
+        uint256 uidTo = addressToUserId[to];
+        require(uidTo != 0, "Receiver must be a registered user");
+        require(
+            users[uidTo].status == UserStatus.Approved,
+            "Receiver not approved"
+        );
+        require(fromRole != Role.Consumer, "Consumer cannot send");
+        require(
+            users[uidTo].role == _nextRoleFor(fromRole),
+            "Invalid next role"
+        );
+
+        _transferCount++;
+        transferId = _transferCount;
+
+        transfers[transferId] = Transfer({
+            id: transferId,
+            tokenId: tokenId,
+            from: msg.sender,
+            to: to,
+            amount: amount,
+            status: TransferStatus.Pending,
+            timestamp: block.timestamp
+        });
+
+        emit TransferCreated(transferId, tokenId, msg.sender, to, amount);
+    }
 
     function acceptTransfer(uint256 transferId) external onlyApproved {
         Transfer storage tr = transfers[transferId];
@@ -255,7 +351,10 @@ contract SupplyChain {
 
         Token storage t = tokens[tr.tokenId];
         require(t.balance[tr.from] >= tr.amount, "From balance changed");
-        unchecked { t.balance[tr.from] -= tr.amount; t.balance[msg.sender] += tr.amount; }
+        unchecked {
+            t.balance[tr.from] -= tr.amount;
+            t.balance[msg.sender] += tr.amount;
+        }
 
         tr.status = TransferStatus.Accepted;
         emit TransferAccepted(transferId);
@@ -269,11 +368,15 @@ contract SupplyChain {
         tr.status = TransferStatus.Rejected;
         emit TransferRejected(transferId);
     }
-    function consume(uint256 tokenId, uint256 amount) external onlyApproved { //New function for future use
+    function consume(uint256 tokenId, uint256 amount) external onlyApproved {
+        //New function for future use
         _requireRole(msg.sender, Role.Consumer);
         require(tokens[tokenId].id != 0, "Token missing");
         require(amount > 0, "amount > 0");
-        require(tokens[tokenId].balance[msg.sender] >= amount, "Insufficient balance");
+        require(
+            tokens[tokenId].balance[msg.sender] >= amount,
+            "Insufficient balance"
+        );
 
         unchecked {
             tokens[tokenId].balance[msg.sender] -= amount;
@@ -282,25 +385,41 @@ contract SupplyChain {
         emit TokenConsumed(tokenId, msg.sender, amount);
     }
 
-
     function getUserByAddress(address who) external view returns (User memory) {
         uint256 uid = addressToUserId[who];
         require(uid != 0, "No user");
         return users[uid];
     }
 
-    function getTokenInfo(uint256 tokenId) external view returns (uint256 id, string memory name, string memory features, uint256 parentId) {
+    function getTokenInfo(
+        uint256 tokenId
+    )
+        external
+        view
+        returns (
+            uint256 id,
+            string memory name,
+            string memory features,
+            uint256 parentId,
+            address creator
+        )
+    {
         Token storage t = tokens[tokenId];
         require(t.id != 0, "Token missing");
-        return (t.id, t.name, t.features, t.parentId);
+        return (t.id, t.name, t.features, t.parentId, t.creator);
     }
 
-    function getTokenBalance(uint256 tokenId, address owner) external view returns (uint256) {
+    function getTokenBalance(
+        uint256 tokenId,
+        address owner
+    ) external view returns (uint256) {
         require(tokens[tokenId].id != 0, "Token missing");
         return tokens[tokenId].balance[owner];
     }
 
-    function getUserTokens(address user) external view returns (uint256[] memory) {
+    function getUserTokens(
+        address user
+    ) external view returns (uint256[] memory) {
         uint256 uid = addressToUserId[user];
         require(uid != 0, "No user");
 
@@ -322,7 +441,9 @@ contract SupplyChain {
         return result;
     }
 
-    function getUserTransfers(address user) external view returns (uint256[] memory) {
+    function getUserTransfers(
+        address user
+    ) external view returns (uint256[] memory) {
         uint256 uid = addressToUserId[user];
         require(uid != 0, "No user");
 
@@ -345,13 +466,22 @@ contract SupplyChain {
         return result;
     }
 
-    function traceLineage(uint256 tokenId) external view returns (uint256[] memory) {
+    function traceLineage(
+        uint256 tokenId
+    ) external view returns (uint256[] memory) {
         require(tokens[tokenId].id != 0, "Token missing");
-        uint256 count = 0; uint256 cur = tokenId;
-        while (cur != 0) { count++; cur = tokens[cur].parentId; }
+        uint256 count = 0;
+        uint256 cur = tokenId;
+        while (cur != 0) {
+            count++;
+            cur = tokens[cur].parentId;
+        }
         uint256[] memory path = new uint256[](count);
         cur = tokenId;
-        for (uint256 i = 0; i < count; i++) { path[i] = cur; cur = tokens[cur].parentId; }
+        for (uint256 i = 0; i < count; i++) {
+            path[i] = cur;
+            cur = tokens[cur].parentId;
+        }
         return path;
     }
 }

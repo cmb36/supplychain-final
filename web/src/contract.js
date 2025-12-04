@@ -220,7 +220,8 @@ export const CONTRACT_ABI = [
       { "internalType": "uint256", "name": "id", "type": "uint256" },
       { "internalType": "string", "name": "name", "type": "string" },
       { "internalType": "string", "name": "features", "type": "string" },
-      { "internalType": "uint256", "name": "parentId", "type": "uint256" }
+      { "internalType": "uint256", "name": "parentId", "type": "uint256" },
+      { "internalType": "address", "name": "creator", "type": "address" }
     ],
     "stateMutability": "view",
     "type": "function"

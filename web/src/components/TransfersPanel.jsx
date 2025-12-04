@@ -11,7 +11,7 @@ const ROLE_LABELS = {
   4: "Consumidor",
 };
 
-const TransfersPanel = ({ account, user }) => {
+const TransfersPanel = ({ account, user, onTransferAccepted }) => {
   const { contract } = useWeb3();
   const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -89,7 +89,13 @@ const TransfersPanel = ({ account, user }) => {
       const tx = await contract.acceptTransfer(transferId);
       await tx.wait();
       
+      // Recargar transferencias
       await loadTransfers();
+      
+      // Recargar inventario de productos del padre (UserDashboard)
+      if (onTransferAccepted) {
+        await onTransferAccepted();
+      }
     } catch (error) {
       console.error('Error aceptando transferencia:', error);
       setError('Error al aceptar la transferencia.');
@@ -104,10 +110,11 @@ const TransfersPanel = ({ account, user }) => {
     setActionLoading(true);
     setError(null);
 
-    try{
+    try {
       const tx = await contract.rejectTransfer(transferId);
       await tx.wait();
       
+      // Recargar transferencias
       await loadTransfers();
     } catch (error) {
       console.error('Error rechazando transferencia:', error);

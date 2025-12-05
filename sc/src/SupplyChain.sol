@@ -205,7 +205,8 @@ contract SupplyChain {
         string calldata name,
         string calldata features,
         uint256 parentId,
-        uint256 amount
+        uint256 amount,
+        uint256 parentAmount
     ) external onlyApproved returns (uint256 tokenId) {
         require(bytes(name).length > 0, "Name required");
         require(amount > 0, "Amount > 0");
@@ -219,19 +220,20 @@ contract SupplyChain {
         } else {
             // Fábrica crea producto derivado (con token padre)
             require(role == Role.Factory, "Only Factory for derived");
+            require(parentAmount > 0, "Parent amount > 0");
 
             // Validar que el token padre existe
             require(tokens[parentId].id != 0, "Parent token missing");
 
             // Validar que la fábrica tiene suficiente balance del token padre
             require(
-                tokens[parentId].balance[msg.sender] >= amount,
+                tokens[parentId].balance[msg.sender] >= parentAmount,
                 "Insufficient parent balance"
             );
 
             // IMPORTANTE: Descontar la cantidad utilizada del token padre
             unchecked {
-                tokens[parentId].balance[msg.sender] -= amount;
+                tokens[parentId].balance[msg.sender] -= parentAmount;
             }
         }
 

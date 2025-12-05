@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useWeb3 } from "../contexts/Web3Context";
 import RegisterSection from "../RegisterSection";
 import TransfersPanel from "./TransfersPanel";
+import TokenDetailsModal from "./TokenDetailsModal";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
 import Textarea from "./ui/Textarea";
@@ -65,6 +66,9 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
   const [selectedParentId, setSelectedParentId] = useState(0);
   const [parentAmount, setParentAmount] = useState("");
   const [processedAmount, setProcessedAmount] = useState(""); // Cantidad de producto procesado a crear
+
+  // Estado para modal de detalles del token
+  const [selectedTokenForDetails, setSelectedTokenForDetails] = useState(null);
 
   const roleLabel = user ? ROLE_LABELS[Number(user.role)] : "Sin rol";
   const statusLabel = user ? STATUS_LABELS[Number(user.status)] : "Sin estado";
@@ -184,21 +188,24 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
       const featuresText = producerFeatures.trim();
       let parentId = 0;
       let amountToCreate = 0;
+      let parentAmountToUse = 0;
       
       if (isFactory) {
         parentId = selectedParentId;
         amountToCreate = Number(processedAmount); // Cantidad de producto procesado a crear
-        // amountToUse (parentAmount) se usa para validación, pero el contrato descuenta automáticamente
+        parentAmountToUse = Number(parentAmount); // Cantidad de materia prima a usar
       } else {
         parentId = 0;
         amountToCreate = Number(producerSupply);
+        parentAmountToUse = 0; // Producer no usa materia prima
       }
 
       const tx = await contract.createToken(
         producerName,
         featuresText,
         parentId,
-        amountToCreate
+        amountToCreate,
+        parentAmountToUse
       );
 
       await tx.wait();
@@ -566,11 +573,9 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
                       <th style={{ textAlign: "right", padding: "10px", fontSize: "12px", fontWeight: "600", color: "#166534" }}>
                         Cantidad
                       </th>
-                      {canTransfer && (
-                        <th style={{ textAlign: "center", padding: "10px", fontSize: "12px", fontWeight: "600", color: "#166534" }}>
-                          Acciones
-                        </th>
-                      )}
+                      <th style={{ textAlign: "center", padding: "10px", fontSize: "12px", fontWeight: "600", color: "#166534" }}>
+                        Acciones
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -588,17 +593,27 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
                         <td style={{ padding: "10px", fontSize: "13px", color: "#16a34a", fontWeight: "600", textAlign: "right" }}>
                           {token.balance}
                         </td>
-                        {canTransfer && (
-                          <td style={{ padding: "10px", textAlign: "center" }}>
+                        <td style={{ padding: "10px", textAlign: "center" }}>
+                          <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
                             <Button
-                              variant="outline"
+                              variant="secondary"
                               size="sm"
-                              onClick={() => openTransferModal(token.id)}
+                              onClick={() => setSelectedTokenForDetails(token.id)}
+                              title="Ver detalles y trazabilidad"
                             >
-                              📤 Transferir
+                              📊 Detalles
                             </Button>
-                          </td>
-                        )}
+                            {canTransfer && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openTransferModal(token.id)}
+                              >
+                                📤 Transferir
+                              </Button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -638,7 +653,7 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
                         Cantidad
                       </th>
                       <th style={{ textAlign: "center", padding: "10px", fontSize: "12px", fontWeight: "600", color: "#6b7280" }}>
-                        Estado
+                        Acciones
                       </th>
                     </tr>
                   </thead>
@@ -658,9 +673,19 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
                           {token.balance}
                         </td>
                         <td style={{ padding: "10px", textAlign: "center" }}>
-                          <Badge variant="neutral" style={{ fontSize: "11px" }}>
-                            Recibido
-                          </Badge>
+                          <div style={{ display: "flex", gap: "6px", justifyContent: "center", alignItems: "center" }}>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setSelectedTokenForDetails(token.id)}
+                              title="Ver detalles y trazabilidad"
+                            >
+                              📊 Detalles
+                            </Button>
+                            <Badge variant="neutral" style={{ fontSize: "11px" }}>
+                              Recibido
+                            </Badge>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1067,6 +1092,14 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
 
       {/* Panel de Transferencias */}
       {isApproved && <TransfersPanel account={account} user={user} onTransferAccepted={loadMyProducts} />}
+
+      {/* Modal de Detalles del Token */}
+      {selectedTokenForDetails && (
+        <TokenDetailsModal
+          tokenId={selectedTokenForDetails}
+          onClose={() => setSelectedTokenForDetails(null)}
+        />
+      )}
     </div>
   );
 };

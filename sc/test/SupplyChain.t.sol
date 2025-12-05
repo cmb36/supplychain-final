@@ -38,7 +38,7 @@ contract SupplyChainTest is Test {
 
     function test_Flow_CreateRawAndTransfer() public {
         vm.startPrank(producer);
-        uint256 tokenId = sc.createToken("Trigo", '{"grade":"A"}', 0, 100);
+        uint256 tokenId = sc.createToken("Trigo", '{"grade":"A"}', 0, 100, 0);
         assertEq(tokenId, 1);
         assertEq(sc.getTokenBalance(tokenId, producer), 100);
         vm.stopPrank();
@@ -58,7 +58,7 @@ contract SupplyChainTest is Test {
     function test_Transfer_WrapperCreatesTransfer() public {
         // Producer crea un token de materia prima
         vm.startPrank(producer);
-        uint256 tokenId = sc.createToken("Trigo", "{}", 0, 50);
+        uint256 tokenId = sc.createToken("Trigo", "{}", 0, 50, 0);
 
         // Usamos la NUEVA función transfer(...) en lugar de createTransfer(...)
         uint256 txId = sc.transfer(factory, tokenId, 20);
@@ -85,7 +85,7 @@ contract SupplyChainTest is Test {
 
         // Producer crea materia prima y le transfiere al Consumer de forma ilegal (debe fallar antes)
         vm.startPrank(producer);
-        uint256 tokenId = sc.createToken("Trigo", "{}", 0, 10);
+        uint256 tokenId = sc.createToken("Trigo", "{}", 0, 10, 0);
         // Producer solo puede enviar a Factory; enviar a Consumer debe revertir por "Invalid next role"
         vm.expectRevert(bytes("Invalid next role"));
         sc.createTransfer(tokenId, consumer, 1);
@@ -105,7 +105,7 @@ contract SupplyChainTest is Test {
 
         // Producer crea materia prima
         vm.startPrank(producer);
-        uint256 tokenId = sc.createToken("Trigo", "{}", 0, 20);
+        uint256 tokenId = sc.createToken("Trigo", "{}", 0, 20, 0);
         // Producer -> Factory
         uint256 txPF = sc.createTransfer(tokenId, factory, 20);
         vm.stopPrank();
@@ -134,7 +134,7 @@ contract SupplyChainTest is Test {
         // Registrar y aprobar Producer (ya lo haces en setUp: userId=1)
         // Producer crea OK
         vm.startPrank(producer);
-        uint256 tokenId = sc.createToken("Maiz", "{}", 0, 5);
+        uint256 tokenId = sc.createToken("Maiz", "{}", 0, 5, 0);
         vm.stopPrank();
 
         // Producer se cancela
@@ -145,7 +145,7 @@ contract SupplyChainTest is Test {
         // Ahora intentar crear token debe fallar por onlyApproved
         vm.startPrank(producer);
         vm.expectRevert(bytes("User not approved"));
-        sc.createToken("Trigo", "{}", 0, 1);
+        sc.createToken("Trigo", "{}", 0, 1, 0);
         vm.stopPrank();
     }
 
@@ -168,8 +168,8 @@ contract SupplyChainTest is Test {
     function test_GetUserTokens() public {
         // Producer crea dos tokens de materia prima
         vm.startPrank(producer);
-        uint256 tokenId1 = sc.createToken("Trigo", "{}", 0, 100);
-        uint256 tokenId2 = sc.createToken("Maiz", "{}", 0, 50);
+        uint256 tokenId1 = sc.createToken("Trigo", "{}", 0, 100, 0);
+        uint256 tokenId2 = sc.createToken("Maiz", "{}", 0, 50, 0);
         vm.stopPrank();
 
         // Obtenemos los tokens del Producer

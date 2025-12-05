@@ -178,7 +178,8 @@ export const CONTRACT_ABI = [
       { "internalType": "string", "name": "name", "type": "string" },
       { "internalType": "string", "name": "features", "type": "string" },
       { "internalType": "uint256", "name": "parentId", "type": "uint256" },
-      { "internalType": "uint256", "name": "amount", "type": "uint256" }
+      { "internalType": "uint256", "name": "amount", "type": "uint256" },
+      { "internalType": "uint256", "name": "parentAmount", "type": "uint256" }
     ],
     "name": "createToken",
     "outputs": [{ "internalType": "uint256", "name": "tokenId", "type": "uint256" }],

@@ -263,13 +263,7 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
     setProducerSuccess(null);
   };
 
-  // Separar tokens que YO creé (transferibles) vs tokens que RECIBÍ (solo para procesar)
-  const myCreatedTokens = myTokens.filter(t => t.creator && t.creator.toLowerCase() === account?.toLowerCase());
-  const receivedMaterials = myTokens.filter(t => t.creator && t.creator.toLowerCase() !== account?.toLowerCase());
-  
-  // Obtener materias primas recibidas disponibles para procesar (que NO creé yo)
-  const rawMaterialsForProcessing = receivedMaterials.filter(t => t.parentId === 0 && t.balance > 0);
-
+  // Definir constantes de usuario y rol primero
   const isApproved = user && Number(user.status) === 2;
   const isPending = user && Number(user.status) === 1;
   const isRejected = user && Number(user.status) === 3;
@@ -278,6 +272,21 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
   const userRole = user ? Number(user.role) : 0;
   const canTransfer = userRole >= 1 && userRole <= 3; // Producer, Factory, Retailer pueden transferir
   const canCreateTokens = userRole === 1 || userRole === 2; // Producer y Factory pueden crear tokens
+
+  // Separar tokens según el rol del usuario
+  // - Productor y Fábrica: Solo pueden transferir tokens que crearon
+  // - Retailer: Puede transferir TODOS los tokens que tenga (creados o recibidos)
+  const isRetailer = userRole === 3;
+  
+  const myCreatedTokens = myTokens.filter(t => t.creator && t.creator.toLowerCase() === account?.toLowerCase());
+  const receivedMaterials = myTokens.filter(t => t.creator && t.creator.toLowerCase() !== account?.toLowerCase());
+  
+  // Si es Retailer, puede transferir TODOS sus tokens
+  const transferableTokens = isRetailer ? myTokens : myCreatedTokens;
+  const nonTransferableTokens = isRetailer ? [] : receivedMaterials;
+  
+  // Obtener materias primas recibidas disponibles para procesar (que NO creé yo) - solo para Factory
+  const rawMaterialsForProcessing = receivedMaterials.filter(t => t.parentId === 0 && t.balance > 0);
 
   // Obtener rol objetivo según flujo: Producer->Factory->Retailer->Consumer
   const getTargetRole = (currentRole) => {
@@ -543,11 +552,11 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
             </div>
           )}
 
-          {/* Productos Creados por Mí - Solo estos se pueden transferir */}
-          {!loadingTokens && !tokensError && myCreatedTokens.length > 0 && (
+          {/* Productos Transferibles */}
+          {!loadingTokens && !tokensError && transferableTokens.length > 0 && (
             <div style={{ marginBottom: "20px" }}>
               <h4 style={{ margin: "0 0 12px 0", fontSize: "15px", color: "#15803d", fontWeight: "600", display: "flex", alignItems: "center", gap: "6px" }}>
-                {isProducer ? "🌾 Mis Productos Creados" : "🏭 Mis Productos Creados"}
+                {isProducer ? "🌾 Mis Productos Creados" : isFactory ? "🏭 Mis Productos Creados" : isRetailer ? "🏪 Mis Productos" : "📦 Mis Productos"}
                 <Badge variant="success" style={{ fontSize: "11px" }}>
                   ✅ Transferibles
                 </Badge>
@@ -579,7 +588,7 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
                     </tr>
                   </thead>
                   <tbody>
-                    {myCreatedTokens.map((token) => (
+                    {transferableTokens.map((token) => (
                       <tr key={token.id} style={{ borderBottom: "1px solid #dcfce7" }}>
                         <td style={{ padding: "10px", fontSize: "13px", color: "#111827", fontWeight: "500" }}>
                           #{token.id}
@@ -622,8 +631,8 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
             </div>
           )}
 
-          {/* Productos Recibidos (No transferibles) - Solo para procesamiento */}
-          {!loadingTokens && !tokensError && receivedMaterials.length > 0 && (
+          {/* Productos Recibidos (No transferibles) - Solo para procesamiento (Producer y Factory) */}
+          {!loadingTokens && !tokensError && nonTransferableTokens.length > 0 && (
             <div style={{ marginBottom: "20px" }}>
               <h4 style={{ margin: "0 0 12px 0", fontSize: "15px", color: "#6b7280", fontWeight: "600", display: "flex", alignItems: "center", gap: "6px" }}>
                 🧺 Productos Recibidos
@@ -658,7 +667,7 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
                     </tr>
                   </thead>
                   <tbody>
-                    {receivedMaterials.map((token) => (
+                    {nonTransferableTokens.map((token) => (
                       <tr key={token.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
                         <td style={{ padding: "10px", fontSize: "13px", color: "#6b7280", fontWeight: "500" }}>
                           #{token.id}
@@ -693,7 +702,7 @@ const UserDashboard = ({ account, user, loadingUser, onReloadUser, hasAdmin }) =
                 </table>
               </div>
               <p style={{ margin: "12px 0 0 0", fontSize: "12px", color: "#6b7280", fontStyle: "italic" }}>
-                💡 Estos productos fueron creados por otros usuarios. Solo puedes usarlos para crear nuevos productos procesados, no puedes transferirlos.
+                💡 Estos productos fueron creados por otros usuarios. {isFactory ? "Solo puedes usarlos para crear nuevos productos procesados, no puedes transferirlos." : "No puedes transferirlos directamente."}
               </p>
             </div>
           )}

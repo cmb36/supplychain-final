@@ -264,10 +264,9 @@ contract SupplyChain {
             "Insufficient balance"
         );
 
-        // IMPORTANTE: Solo puedes transferir tokens que TÚ creaste
-        require(tokens[tokenId].creator == msg.sender, "Not token creator");
-
-        uint256 uidFrom = addressToUserId[msg.sender]; // Enforce linear pipeline: Producer->Factory->Retailer->Consumer
+        // Enforce linear pipeline: Producer->Factory->Retailer->Consumer
+        // Any approved user with balance can transfer (not just the creator)
+        uint256 uidFrom = addressToUserId[msg.sender];
         Role fromRole = users[uidFrom].role;
 
         uint256 uidTo = addressToUserId[to];
@@ -311,9 +310,8 @@ contract SupplyChain {
             "Insufficient balance"
         );
 
-        // IMPORTANTE: Solo puedes transferir tokens que TÚ creaste
-        require(tokens[tokenId].creator == msg.sender, "Not token creator");
-
+        // Enforce linear pipeline: Producer->Factory->Retailer->Consumer
+        // Any approved user with balance can transfer (not just the creator)
         uint256 uidFrom = addressToUserId[msg.sender];
         Role fromRole = users[uidFrom].role;
 

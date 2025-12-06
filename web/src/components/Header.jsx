@@ -5,7 +5,7 @@ const ROLE_LABELS = {
   0: "Sin rol",
   1: "Productor",
   2: "Fábrica",
-  3: "Retailer",
+  3: "Comerciante",
   4: "Consumidor",
   5: "Administrador",
 };

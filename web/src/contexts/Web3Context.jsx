@@ -25,6 +25,7 @@ export function Web3Provider({ children }) {
     const browserProvider = new BrowserProvider(ethereum);
     const signer = await browserProvider.getSigner();
     const supplyChainContract = new Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+    window._sc = supplyChainContract; // DEBUG
 
     setProvider(browserProvider);
     setContract(supplyChainContract);

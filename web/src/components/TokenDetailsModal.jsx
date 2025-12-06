@@ -8,7 +8,7 @@ const ROLE_LABELS = [
   "Sin rol",
   "Productor",
   "Fábrica",
-  "Retailer",
+  "Comerciante",
   "Consumidor",
   "Administrador"
 ];
@@ -21,6 +21,7 @@ const TokenDetailsModal = ({ tokenId, onClose }) => {
   const [parentTokens, setParentTokens] = useState([]);
   const [childTokens, setChildTokens] = useState([]);
   const [transfers, setTransfers] = useState([]);
+  const [supplyChainPath, setSupplyChainPath] = useState([]);
 
   useEffect(() => {
     if (!contract || !tokenId) return;
@@ -33,13 +34,15 @@ const TokenDetailsModal = ({ tokenId, onClose }) => {
         const [id, name, features, parentId, creator] = await contract.getTokenInfo(tokenId);
         const bal = await contract.getTokenBalance(tokenId, account);
 
-        setTokenInfo({
+        const currentTokenInfo = {
           id: Number(id),
           name,
           features,
           parentId: Number(parentId),
           creator,
-        });
+        };
+        
+        setTokenInfo(currentTokenInfo);
         setBalance(Number(bal));
 
         // 2. Cargar trazabilidad hacia atrás (padres)
@@ -100,7 +103,7 @@ const TokenDetailsModal = ({ tokenId, onClose }) => {
           console.error("Error loading child tokens:", err);
         }
 
-        // 4. Cargar transferencias del token
+        // 4. Cargar transferencias del token con información de usuarios
         try {
           const filter = contract.filters.TransferCreated(null, tokenId);
           const events = await contract.queryFilter(filter, 0);
@@ -114,12 +117,32 @@ const TokenDetailsModal = ({ tokenId, onClose }) => {
               
               // Solo mostrar transferencias aceptadas (status 2)
               if (Number(transferData.status) === 2) {
+                // Obtener información de roles de los usuarios
+                let fromRole = "Desconocido";
+                let toRole = "Desconocido";
+                
+                try {
+                  const fromUser = await contract.getUserByAddress(transferData.from);
+                  fromRole = ROLE_LABELS[Number(fromUser.role)] || "Desconocido";
+                } catch (e) {
+                  // Usuario puede no existir
+                }
+                
+                try {
+                  const toUser = await contract.getUserByAddress(transferData.to);
+                  toRole = ROLE_LABELS[Number(toUser.role)] || "Desconocido";
+                } catch (e) {
+                  // Usuario puede no existir
+                }
+                
                 transfersData.push({
                   id: Number(transferData.id),
                   from: transferData.from,
                   to: transferData.to,
                   amount: Number(transferData.amount),
                   timestamp: Number(transferData.timestamp),
+                  fromRole,
+                  toRole,
                 });
               }
             } catch (err) {
@@ -127,9 +150,44 @@ const TokenDetailsModal = ({ tokenId, onClose }) => {
             }
           }
           
-          // Ordenar por timestamp (más recientes primero)
-          transfersData.sort((a, b) => b.timestamp - a.timestamp);
+          // Ordenar por timestamp (más antiguas primero para ver la ruta)
+          transfersData.sort((a, b) => a.timestamp - b.timestamp);
           setTransfers(transfersData);
+          
+          // 5. Construir la ruta completa de la cadena de suministro
+          const path = [];
+          
+          // Empezar con el creador original del token
+          try {
+            const creatorUser = await contract.getUserByAddress(currentTokenInfo.creator);
+            path.push({
+              address: currentTokenInfo.creator,
+              role: ROLE_LABELS[Number(creatorUser.role)] || "Desconocido",
+              action: "Creó el token",
+              timestamp: null,
+            });
+          } catch (e) {
+            path.push({
+              address: currentTokenInfo.creator,
+              role: "Desconocido",
+              action: "Creó el token",
+              timestamp: null,
+            });
+          }
+          
+          // Agregar cada transferencia como un paso
+          for (const transfer of transfersData) {
+            path.push({
+              address: transfer.to,
+              role: transfer.toRole,
+              action: `Recibió ${transfer.amount} unidades`,
+              timestamp: transfer.timestamp,
+              from: transfer.from,
+              fromRole: transfer.fromRole,
+            });
+          }
+          
+          setSupplyChainPath(path);
         } catch (err) {
           console.error("Error loading transfers:", err);
         }
@@ -356,13 +414,135 @@ const TokenDetailsModal = ({ tokenId, onClose }) => {
               )}
             </div>
 
+            {/* Ruta Completa de la Cadena de Suministro */}
+            {supplyChainPath.length > 0 && (
+              <div style={{ marginBottom: "24px" }}>
+                <h3 style={{ margin: "0 0 12px 0", fontSize: "16px", fontWeight: "600", color: "#111827", display: "flex", alignItems: "center", gap: "8px" }}>
+                  🔗 Ruta Completa de Trazabilidad
+                  <span style={{ fontSize: "13px", fontWeight: "400", color: "#6b7280" }}>
+                    (Del productor al consumidor)
+                  </span>
+                </h3>
+                <div
+                  style={{
+                    padding: "20px",
+                    backgroundColor: "#f0fdf4",
+                    borderRadius: "8px",
+                    border: "2px solid #86efac",
+                  }}
+                >
+                  {supplyChainPath.map((step, index) => (
+                    <div key={index}>
+                      <div
+                        style={{
+                          padding: "16px",
+                          backgroundColor: "white",
+                          borderRadius: "8px",
+                          border: "2px solid #bbf7d0",
+                          position: "relative",
+                        }}
+                      >
+                        {/* Número de paso */}
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: "-12px",
+                            left: "16px",
+                            backgroundColor: "#22c55e",
+                            color: "white",
+                            borderRadius: "50%",
+                            width: "28px",
+                            height: "28px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "14px",
+                            fontWeight: "700",
+                            boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                          }}
+                        >
+                          {index + 1}
+                        </div>
+                        
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: "8px" }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                              <Badge variant="success" style={{ fontSize: "11px" }}>
+                                {step.role}
+                              </Badge>
+                              <span style={{ fontSize: "13px", color: "#15803d", fontWeight: "600" }}>
+                                {step.action}
+                              </span>
+                            </div>
+                            <p style={{ margin: "0 0 4px 0", fontSize: "12px", color: "#6b7280" }}>
+                              <strong>Dirección:</strong>
+                            </p>
+                            <p
+                              style={{
+                                margin: "0 0 8px 0",
+                                fontSize: "12px",
+                                fontFamily: "monospace",
+                                color: "#166534",
+                                wordBreak: "break-all",
+                              }}
+                            >
+                              {step.address}
+                              {step.address.toLowerCase() === account?.toLowerCase() && (
+                                <Badge variant="info" style={{ fontSize: "10px", marginLeft: "8px" }}>Tú</Badge>
+                              )}
+                            </p>
+                            
+                            {step.from && (
+                              <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #dcfce7" }}>
+                                <p style={{ margin: "0 0 4px 0", fontSize: "11px", color: "#6b7280" }}>
+                                  <strong>Transferido desde:</strong>
+                                </p>
+                                <p style={{ margin: "0 0 4px 0", fontSize: "11px", color: "#6b7280" }}>
+                                  {step.fromRole}: <span style={{ fontFamily: "monospace", fontSize: "10px" }}>{step.from}</span>
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {step.timestamp && (
+                            <div style={{ textAlign: "right" }}>
+                              <p style={{ margin: 0, fontSize: "11px", color: "#6b7280" }}>
+                                {new Date(step.timestamp * 1000).toLocaleDateString('es-ES', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                })}
+                              </p>
+                              <p style={{ margin: 0, fontSize: "10px", color: "#9ca3af" }}>
+                                {new Date(step.timestamp * 1000).toLocaleTimeString('es-ES', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Flecha hacia abajo entre pasos */}
+                      {index < supplyChainPath.length - 1 && (
+                        <div style={{ display: "flex", justifyContent: "center", margin: "8px 0" }}>
+                          <div style={{ fontSize: "24px", color: "#22c55e" }}>⬇️</div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Trazabilidad hacia atrás (Padres/Materias Primas) */}
             {parentTokens.length > 0 && (
               <div style={{ marginBottom: "24px" }}>
                 <h3 style={{ margin: "0 0 12px 0", fontSize: "16px", fontWeight: "600", color: "#111827", display: "flex", alignItems: "center", gap: "8px" }}>
-                  ⬅️ Trazabilidad hacia Atrás
+                  ⬅️ Materias Primas Utilizadas
                   <span style={{ fontSize: "13px", fontWeight: "400", color: "#6b7280" }}>
-                    (Materias primas utilizadas)
+                    (Tokens padre)
                   </span>
                 </h3>
                 <div
@@ -391,6 +571,9 @@ const TokenDetailsModal = ({ tokenId, onClose }) => {
                           </p>
                           <p style={{ margin: "0 0 4px 0", fontSize: "12px", color: "#6b7280" }}>
                             ID: #{parent.id}
+                          </p>
+                          <p style={{ margin: "0 0 4px 0", fontSize: "11px", color: "#9ca3af" }}>
+                            <strong>Creador:</strong> <span style={{ fontFamily: "monospace", fontSize: "10px" }}>{parent.creator}</span>
                           </p>
                           {parent.features && (
                             <p style={{ margin: 0, fontSize: "12px", color: "#9ca3af", fontStyle: "italic" }}>
@@ -445,6 +628,9 @@ const TokenDetailsModal = ({ tokenId, onClose }) => {
                             <p style={{ margin: "0 0 4px 0", fontSize: "12px", color: "#6b7280" }}>
                               ID: #{child.id}
                             </p>
+                            <p style={{ margin: "0 0 4px 0", fontSize: "11px", color: "#9ca3af" }}>
+                              <strong>Creador:</strong> <span style={{ fontFamily: "monospace", fontSize: "10px" }}>{child.creator}</span>
+                            </p>
                             {child.features && (
                               <p style={{ margin: 0, fontSize: "12px", color: "#9ca3af", fontStyle: "italic" }}>
                                 {child.features}
@@ -477,10 +663,10 @@ const TokenDetailsModal = ({ tokenId, onClose }) => {
               </div>
             )}
 
-            {/* Historial de Transferencias */}
+            {/* Historial Detallado de Transferencias */}
             <div style={{ marginBottom: "24px" }}>
               <h3 style={{ margin: "0 0 12px 0", fontSize: "16px", fontWeight: "600", color: "#111827", display: "flex", alignItems: "center", gap: "8px" }}>
-                📤 Historial de Transferencias
+                📤 Historial Detallado de Transferencias
                 {transfers.length > 0 && (
                   <Badge variant="neutral" style={{ fontSize: "11px" }}>
                     {transfers.length} {transfers.length === 1 ? "transferencia" : "transferencias"}
@@ -494,56 +680,116 @@ const TokenDetailsModal = ({ tokenId, onClose }) => {
                     backgroundColor: "#fef3c7",
                     borderRadius: "8px",
                     border: "1px solid #fde68a",
-                    maxHeight: "300px",
+                    maxHeight: "400px",
                     overflowY: "auto",
                   }}
                 >
-                  {transfers.map((transfer) => {
+                  {transfers.map((transfer, index) => {
                     const date = new Date(transfer.timestamp * 1000);
                     return (
                       <div
                         key={transfer.id}
                         style={{
-                          padding: "12px",
+                          padding: "14px",
                           backgroundColor: "white",
                           borderRadius: "6px",
                           marginBottom: "8px",
                           border: "1px solid #fde68a",
                         }}
                       >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <span style={{ fontSize: "14px" }}>📤</span>
+                            <div
+                              style={{
+                                backgroundColor: "#f59e0b",
+                                color: "white",
+                                borderRadius: "50%",
+                                width: "24px",
+                                height: "24px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "12px",
+                                fontWeight: "700",
+                              }}
+                            >
+                              {index + 1}
+                            </div>
                             <Badge variant="success" style={{ fontSize: "11px" }}>
-                              Completada
+                              ✓ Completada
                             </Badge>
                           </div>
                           <p style={{ margin: 0, fontSize: "11px", color: "#78350f" }}>
-                            {date.toLocaleDateString()} {date.toLocaleTimeString()}
+                            {date.toLocaleDateString('es-ES', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
                           </p>
                         </div>
-                        <div style={{ fontSize: "12px", color: "#78350f" }}>
-                          <div style={{ marginBottom: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
-                            <strong>De:</strong>
-                            <span style={{ fontFamily: "monospace" }}>
-                              {transfer.from.slice(0, 8)}...{transfer.from.slice(-6)}
-                            </span>
+                        
+                        {/* De */}
+                        <div style={{ marginBottom: "8px", paddingBottom: "8px", borderBottom: "1px solid #fef3c7" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                            <strong style={{ fontSize: "12px", color: "#92400e" }}>📤 De:</strong>
+                            <Badge variant="warning" style={{ fontSize: "10px" }}>
+                              {transfer.fromRole}
+                            </Badge>
                             {transfer.from.toLowerCase() === account?.toLowerCase() && (
                               <Badge variant="info" style={{ fontSize: "10px" }}>Tú</Badge>
                             )}
                           </div>
-                          <div style={{ marginBottom: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
-                            <strong>Para:</strong>
-                            <span style={{ fontFamily: "monospace" }}>
-                              {transfer.to.slice(0, 8)}...{transfer.to.slice(-6)}
-                            </span>
+                          <p
+                            style={{
+                              margin: 0,
+                              fontSize: "11px",
+                              fontFamily: "monospace",
+                              color: "#78350f",
+                              wordBreak: "break-all",
+                            }}
+                          >
+                            {transfer.from}
+                          </p>
+                        </div>
+                        
+                        {/* Para */}
+                        <div style={{ marginBottom: "8px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                            <strong style={{ fontSize: "12px", color: "#92400e" }}>📥 Para:</strong>
+                            <Badge variant="warning" style={{ fontSize: "10px" }}>
+                              {transfer.toRole}
+                            </Badge>
                             {transfer.to.toLowerCase() === account?.toLowerCase() && (
                               <Badge variant="info" style={{ fontSize: "10px" }}>Tú</Badge>
                             )}
                           </div>
-                          <div>
-                            <strong>Cantidad:</strong> {transfer.amount} unidades
-                          </div>
+                          <p
+                            style={{
+                              margin: 0,
+                              fontSize: "11px",
+                              fontFamily: "monospace",
+                              color: "#78350f",
+                              wordBreak: "break-all",
+                            }}
+                          >
+                            {transfer.to}
+                          </p>
+                        </div>
+                        
+                        {/* Cantidad */}
+                        <div
+                          style={{
+                            marginTop: "8px",
+                            paddingTop: "8px",
+                            borderTop: "1px solid #fef3c7",
+                          }}
+                        >
+                          <strong style={{ fontSize: "12px", color: "#92400e" }}>Cantidad transferida:</strong>{" "}
+                          <span style={{ fontSize: "14px", fontWeight: "700", color: "#78350f" }}>
+                            {transfer.amount} unidades
+                          </span>
                         </div>
                       </div>
                     );

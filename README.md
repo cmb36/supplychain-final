@@ -1,156 +1,228 @@
-🌐 SupplyChain Tracker – Sistema de Trazabilidad en Blockchain
-Proyecto desarrollado en el marco del curso de Ethereum / Blockchain de CodeCrypto Academy.
-Aplicación descentralizada que permite registrar, transformar y seguir productos desde su origen hasta el consumidor final, garantizando transparencia, trazabilidad verificable y flujo controlado mediante roles en toda la cadena de suministro.
-Todo ello sustentado sobre un smart contract Solidity, pruebas automatizadas y una interfaz web construida en React.
-________________________________________
-📘 1. Objetivo del proyecto
-Desarrollar un sistema completo y funcional de trazabilidad que permita:
-•	Registrar usuarios según su rol en la cadena de suministro.
-•	Aprobar o rechazar su solicitud desde un panel administrativo.
-•	Crear productos (tokens) y registrar su linaje de transformación.
-•	Transferirlos respetando un flujo lógico y seguro entre roles.
-•	Consultar en cualquier momento la historia completa del producto.
-•	Interactuar con el contrato desde un frontend React + MetaMask.
-Este repositorio incluye:
-•	Smart contract en Solidity
-•	Tests automatizados con Foundry
-•	Scripts de deploy
-•	Frontend funcional con Vite + React
-•	Documentación técnica completa
-________________________________________
-🧩 2. Roles en la cadena de suministro
-Rol	Función	Acciones permitidas
-Producer	Origen de la materia prima	Crear tokens base, transferir a Factory
-Factory	Transformación	Crear productos procesados, transferir a Retailer
-Retailer	Distribución	Transferir a Consumer
-Consumer	Etapa final / Consumo	Aceptar tokens, consultar trazabilidad
-Admin	Control del sistema	Aprobar/rechazar usuarios, desactivar cuentas
-✔ El flujo es estrictamente validado:
+# 🟦 README.md — SupplyChain Tracker (PFM 2025)
+
+## 📌 Descripción general
+
+Proyecto final desarrollado en el marco del **PFM – Trazabilidad en Blockchain (CodeCrypto Academy, 2025)**.
+
+**SupplyChain Tracker** es una aplicación descentralizada (dApp) que permite:
+
+- Registrar usuarios con distintos roles de la cadena de suministro.  
+- Aprobar/rechazar usuarios desde un panel administrativo.  
+- Crear tokens que representan productos o materias primas.  
+- Procesarlos, transferirlos y consultar su trazabilidad completa.  
+- Interactuar con el contrato mediante un **frontend en React + MetaMask**.  
+- Garantizar transparencia e integridad mediante un **smart contract en Solidity**.
+
+---
+
+# 🧱 Tecnologías utilizadas
+
+- **Solidity (0.8.x)**  
+- **Foundry (forge, anvil)**  
+- **JavaScript / React (Vite)**  
+- **ethers.js**  
+- **MetaMask**  
+- **GitHub / Git**  
+
+---
+
+# 🧩 Funcionalidades principales
+
+### Usuarios y Roles
+El sistema define cinco roles:
+
+- **Admin** → Control del sistema  
+- **Producer** → Crea materia prima  
+- **Factory** → Procesa productos  
+- **Retailer** → Comercializa  
+- **Consumer** → Recibe y consume  
+
+Los usuarios deben **solicitar un rol** y ser **aprobados por el Admin** antes de operar.
+
+### Tokens y Producto
+Cada producto/token posee:
+
+- ID  
+- Nombre  
+- Descripción  
+- Creador  
+- Cantidad  
+- Parent ID (si proviene de otro token)
+
+### Transferencias
+El flujo permitido:
+
+```
 Producer → Factory → Retailer → Consumer
-________________________________________
-🔍 3. Características principales
-✔ Registro y aprobación de usuarios
-Solo usuarios aprobados por el Admin pueden operar.
-✔ Tokenización de productos
-Cada producto posee:
-•	Nombre
-•	Descripción
-•	Cantidad
-•	Creador
-•	ID del token padre (si fue procesado)
-•	Balances individuales por usuario
-✔ Transferencias seguras con validación
-El contrato verifica:
-•	Que el remitente tenga saldo suficiente
-•	Que el receptor tenga el rol adecuado
-•	Que el flujo esté permitido
-•	Que el receptor acepte la transferencia
-✔ Trazabilidad completa
-El sistema permite ver:
-•	Linaje del token (de hijo a padre)
-•	Histórico de transferencias
-•	Balances por usuario
-•	Relación entre materia prima y productos procesados
-________________________________________
-🏗️ 4. Estructura del repositorio
+```
 
+Las transferencias requieren:
+
+- Verificación de rol  
+- Suficiente cantidad  
+- Aceptación por parte del receptor  
+
+### Trazabilidad
+Es posible consultar:
+
+- Linaje completo del producto  
+- Transferencias históricas  
+- Balances por usuario  
+
+---
+
+# 🗂️ Estructura del repositorio
+
+```
 supplychain-final/
-│
-├── README.md                 # Documento principal del proyecto
-│
-├── docs/                     # Documentación técnica
-│   ├── IA.md                 # Diario técnico del desarrollo
-│   └── README_SPEC.md        # Especificación funcional original (requisitos)
-│
-├── sc/                       # Smart contracts + tests + despliegues (Foundry)
-│   ├── src/                  # SupplyChain.sol (contrato principal)
-│   ├── test/                 # Tests automatizados (forge)
-│   ├── script/               # Script de deploy (Deploy.s.sol)
-│   ├── foundry.toml          # Configuración de Foundry
-│   └── foundry.lock
-│
-├── web/                      # Frontend (React + Vite)
+├── README.md
+├── docs/
+│   ├── IA.md                # Diario técnico del desarrollo
+│   └── README_SPEC.md       # Especificación original
+├── sc/
 │   ├── src/
-│   │   ├── assets/           # Iconos / imágenes
-│   │   ├── components/       # Componentes reutilizables
-│   │   ├── contexts/         # Web3Context, Providers, etc.
-│   │   ├── hooks/            # Hooks personalizados
-│   │   ├── contracts/        # ABI + dirección del contrato
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   ├── public/
-│   ├── package.json
-│   ├── package-lock.json
-│   └── vite.config.js
+│   │   └── SupplyChain.sol  # Smart contract principal
+│   ├── test/                # Tests (Foundry)
+│   ├── script/
+│   │   └── Deploy.s.sol     # Script de deploy
+│   └── foundry.toml
+└── web/
+    ├── src/
+    │   ├── App.jsx
+    │   ├── main.jsx
+    │   ├── contract.js       # ABI + Address del contrato
+    │   └── components/, contexts/, hooks/, assets/
+    ├── public/
+    ├── package.json
+    └── vite.config.js
+```
 
-________________________________________
-🧪 5. Tests implementados (Foundry)
-Los tests cubren:
-•	Registro y aprobación de usuarios
-•	Creación de tokens base y tokens procesados
-•	Transferencias correctas entre roles válidos
-•	Validación del flujo con errores esperados
-•	Consumo final por el Consumer
-•	Verificación de balances y restricciones
-Ejecutar tests:
+---
+
+# 🧪 Tests (Foundry)
+
+Ejecutar:
+
+```
 forge test -vvv
-________________________________________
-🚀 6. Deploy del contrato
-✔ Red local (Anvil)
-anvil
-forge script script/Deploy.s.sol:DeploySupplyChain \
-  --rpc-url http://localhost:8545 \
-  --private-key <clave_de_anvil> \
-  --broadcast
-✔ Testnet Sepolia (Alchemy)
-Contrato desplegado en:
-🔗 0xcd719932a0F99Be0fEc3bf0CD6056162A831d2e1
-________________________________________
-🖥️ 7. Frontend – SupplyChain Tracker UI
-Tecnologías:
-•	React + Vite
-•	ethers.js
-•	MetaMask
-•	Componentes reutilizables, estados globales y hooks personalizados
-Pantallas principales:
-•	Conectar wallet
-•	Registro de usuario
-•	Panel del Administrador
-•	Panel Producer / Factory / Retailer
-•	Procesamiento de productos
-•	Transferencias
-•	Visualización de trazabilidad completa
-________________________________________
-🧠 8. Decisiones técnicas relevantes
-•	Sistema de roles diseñado como enum.
-•	Uso de mapping(address => uint256) para balances por token.
-•	Estructura modular para facilitar mantenimiento.
-•	Validaciones estrictas en cada transición del flujo.
-•	Modelo de transferencias tipo pull: el receptor debe aceptar.
-•	Frontend estructurado en capas (contexts, hooks, services).
-________________________________________
-🔐 9. Seguridad implementada
-El contrato contempla:
-•	Validación de rol
-•	Validación de estado del usuario
-•	Verificación de suficiente balance
-•	Prevención de flujos no autorizados
-•	Transferencias con doble confirmación
-Mejoras sugeridas:
-•	Pausable
-•	Multi-signature para Admin
-•	Limitadores de frecuencia (rate limiting)
-________________________________________
-📝 10. Lecciones aprendidas
-•	La importancia de trabajar en pasos muy pequeños y claros.
-•	Integración real entre Foundry, MetaMask y React.
-•	Manejo de errores reales de blockchain (permisos, balances, estados).
-•	Cómo documentar un proyecto completo para auditoría o entrega final.
-•	El valor de validar la información, corregir, refinar y volver a probar.
-•	La experiencia humana detrás del código: paciencia, foco y resiliencia.
-________________________________________
-🦋 11. Autora
-Carla Bozzano
-Ingeniera en Informática · Coach Holística · Desarrolladora Blockchain
-Proyecto construido con intención, precisión y propósito.
+```
 
+Cubre:
+
+- Registro y aprobación de usuarios  
+- Creación de tokens base y derivados  
+- Transferencias válidas e inválidas  
+- Consumo final  
+- Restricciones por rol  
+- Validación del flujo completo  
+
+---
+
+# 🚀 Cómo ejecutar el proyecto
+
+## 1) Levantar red local
+
+```
+anvil
+```
+
+## 2) Desplegar contrato en Anvil
+
+```
+forge script script/Deploy.s.sol:DeploySupplyChain   --rpc-url http://127.0.0.1:8545   --private-key <private_key_anvil>   --broadcast
+```
+
+El terminal mostrará:
+
+```
+Deployed SupplyChain to: 0x....
+```
+
+Copiar esta dirección en:
+
+```
+web/src/contract.js
+```
+
+## 3) Ejecutar el frontend
+
+```
+cd web
+npm install
+npm run dev
+```
+
+Abrir en navegador:
+
+```
+http://localhost:5173
+```
+
+Con MetaMask conectado a:
+
+```
+http://127.0.0.1:8545   (Anvil Local)
+ChainId: 31337
+```
+
+---
+
+# 🧠 Decisiones técnicas relevantes
+
+- Modelo de roles mediante `enum`.
+- Estructura de trazabilidad basada en `parentId`.
+- Sistema de balances por token y usuario.
+- Validaciones estrictas de flujo entre roles.
+- Transferencias con doble confirmación (createTransfer → acceptTransfer).
+- Arquitectura frontend organizada en `contexts`, `hooks`, y `services`.
+
+---
+
+# 🔐 Seguridad
+
+- Validación de permisos por rol.  
+- Restricción de flujo de producto.  
+- Prevención de transferencias inválidas.  
+- Estados de usuario: Pending / Approved / Rejected / Canceled.  
+
+---
+
+# 🛠️ Troubleshooting (importante)
+
+En Chrome, MetaMask puede quedar bloqueado cuando hay muchas pestañas con dApps locales abiertas.
+
+Síntomas:
+
+- Roles no se actualizan  
+- Balances se muestran en 0  
+- Pantalla queda congelada  
+- No aparece el Panel de Admin  
+
+**Solución comprobada (vía console):**
+
+```js
+await window.ethereum.request({
+  method: "wallet_revokePermissions",
+  params: [{ eth_accounts: {} }]
+});
+
+localStorage.clear();
+sessionStorage.clear();
+location.reload();
+```
+
+Esto:
+
+- Revoca permisos corruptos  
+- Limpia la caché de la dApp  
+- Fuerza a MetaMask a reconectar al nodo real  
+- Desbloquea los roles y saldos  
+
+---
+
+# 🦋 Autora
+
+**Carla Bozzano**  
+Ingeniera en Informática · Coach Holística · Desarrolladora Blockchain  
+
+Proyecto creado con intención, disciplina y propósito.
